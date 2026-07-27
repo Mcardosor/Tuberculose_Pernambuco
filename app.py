@@ -16,6 +16,7 @@ Rodar local:  python -m streamlit run app.py   →  http://localhost:8501
 from __future__ import annotations
 
 import html
+import json
 import os
 from urllib.parse import urljoin
 
@@ -784,35 +785,60 @@ def secao_analise_livre() -> None:
 
     st.divider()
 
-    # ── Passo 2: só então embutir ─────────────────────────────────────────────
-    st.markdown("##### 2 · Trabalhe aqui dentro (opcional)")
-    embutir = st.toggle(
-        "Já entrei — carregar o Superset nesta página",
-        key="_embutir_superset",
-        help="Depois de entrar na outra aba, a sessão vale aqui também. "
-             "Se preferir, pode continuar trabalhando direto na outra aba.",
-    )
+    # ── Passo 2: embed que se recusa a mostrar tela de login ──────────────────
+    #
+    # Não basta pedir para a pessoa entrar antes: ela liga o embed sem estar
+    # logada, o Superset serve a própria tela de login dentro do quadro, ela
+    # clica em "entrar com GitHub" ali — e leva o "github.com recusou a
+    # conexão", porque o GitHub proíbe sua tela de senha em iframe.
+    #
+    # A saída é o quadro decidir sozinho. O painel e o Superset estão na MESMA
+    # origem (painel.cenarios.unb.br), então este script consegue perguntar
+    # `/api/v1/me/` com o cookie de sessão: 200 = logado, e só aí o iframe é
+    # criado; qualquer outra coisa mostra o convite para entrar em aba nova.
+    # Assim nunca existe um formulário de login do GitHub dentro do quadro.
+    st.markdown("##### 2 · Trabalhe sem sair do painel")
 
-    if not embutir:
-        st.info(
-            "Depois de entrar pela aba nova, ligue a chave acima para usar o "
-            "Superset sem sair deste painel.",
-            icon="💡",
-        )
-        return
-
-    # A URL vai para dentro de um atributo HTML: `url_segura` já garantiu que o
-    # esquema é http(s) com host, e o escape impede fechar o atributo e injetar
-    # outro (`x" onload="…`).
+    raiz_js = json.dumps(raiz)  # escapa aspas e barras com segurança
     components.html(
-        f'<iframe class="superset-frame" src="{html.escape(raiz, quote=True)}" '
-        f'width="100%" height="900" frameborder="0" '
-        f'allow="fullscreen; clipboard-write"></iframe>',
-        height=920,
-    )
-    st.caption(
-        "Se o quadro acima aparecer vazio ou com “recusou a conexão”, sua sessão "
-        "do Superset expirou: entre de novo pelo botão do passo 1."
+        """
+<div id="area" style="font-family:Inter,system-ui,sans-serif"></div>
+<script>
+const RAIZ = %s;
+const area = document.getElementById('area');
+
+function convite(detalhe) {
+  area.innerHTML = `
+    <div style="border:1px dashed #d0d7de;border-radius:12px;padding:26px;
+                text-align:center;background:rgba(43,123,185,.04)">
+      <div style="font-size:30px;line-height:1">🔐</div>
+      <p style="font-weight:700;color:#1a3a5c;margin:.6rem 0 .2rem">
+        Entre no Superset para usá-lo aqui dentro</p>
+      <p style="color:#57606a;font-size:.87rem;margin:0 0 1rem;max-width:46ch;
+                display:inline-block">
+        O login é pela sua conta do GitHub, que por segurança não pode ser
+        aberto dentro de quadros embutidos. Entre na aba nova e volte — a
+        sessão passa a valer aqui.</p><br>
+      <a href="${RAIZ}" target="_blank" rel="noopener"
+         style="display:inline-block;background:#2B7BB9;color:#fff;
+                padding:10px 20px;border-radius:8px;font-weight:700;
+                text-decoration:none">↗ Entrar no Superset</a>
+      <p style="color:#8b949e;font-size:.75rem;margin-top:.9rem">${detalhe}</p>
+    </div>`;
+}
+
+fetch(RAIZ + 'api/v1/me/', {credentials: 'include'})
+  .then(r => {
+    if (!r.ok) return convite('Sessão não encontrada.');
+    area.innerHTML = `<iframe src="${RAIZ}" width="100%%" height="900"
+        style="border:1px solid #d0d7de;border-radius:12px"
+        allow="fullscreen; clipboard-write"></iframe>`;
+  })
+  .catch(() => convite('Não consegui verificar a sessão deste navegador.'));
+</script>
+"""
+        % raiz_js,
+        height=940,
     )
 
 
