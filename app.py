@@ -761,19 +761,45 @@ def secao_analise_livre() -> None:
     if not raiz.endswith("/"):
         raiz += "/"
 
-    # ── Atalhos + entrada para a raiz da aplicação ────────────────────────────
+    # ── Passo 1: entrar, obrigatoriamente FORA do quadro ──────────────────────
+    #
+    # O login do Superset é OAuth do GitHub, e o GitHub manda X-Frame-Options:
+    # DENY na tela de senha (proteção contra clickjacking). Quem clica em
+    # "entrar" dentro do iframe recebe um "github.com recusou a conexão" sem
+    # explicação nenhuma.
+    #
+    # Um aviso em texto não resolve — a pessoa clica no lugar natural, que é
+    # dentro do quadro. Por isso o quadro só aparece DEPOIS de a pessoa dizer
+    # que já entrou: o caminho errado deixa de existir.
+    st.markdown("##### 1 · Entre no Superset")
+    st.caption(
+        "O login é pela sua conta do GitHub e precisa acontecer numa aba separada — "
+        "o GitHub bloqueia a própria tela de senha dentro de quadros embutidos, "
+        "por segurança."
+    )
     colunas = st.columns(len(SUPERSET_ATALHOS) + 1)
-    colunas[0].link_button("↗ Abrir o Superset", raiz, width="stretch",
-                           type="primary")
+    colunas[0].link_button("↗ Abrir o Superset", raiz, width="stretch", type="primary")
     for col, (rotulo, caminho) in zip(colunas[1:], SUPERSET_ATALHOS):
         col.link_button(rotulo, urljoin(raiz, caminho), width="stretch")
 
-    st.caption(
-        "⚠️ O login do Superset é feito por conta do GitHub e **não funciona dentro "
-        "do quadro abaixo** — o GitHub proíbe ser embutido em iframe. Se o quadro "
-        "aparecer em branco ou pedindo login, entre uma vez pelo botão "
-        "**Abrir o Superset**; depois disso a sessão vale aqui também."
+    st.divider()
+
+    # ── Passo 2: só então embutir ─────────────────────────────────────────────
+    st.markdown("##### 2 · Trabalhe aqui dentro (opcional)")
+    embutir = st.toggle(
+        "Já entrei — carregar o Superset nesta página",
+        key="_embutir_superset",
+        help="Depois de entrar na outra aba, a sessão vale aqui também. "
+             "Se preferir, pode continuar trabalhando direto na outra aba.",
     )
+
+    if not embutir:
+        st.info(
+            "Depois de entrar pela aba nova, ligue a chave acima para usar o "
+            "Superset sem sair deste painel.",
+            icon="💡",
+        )
+        return
 
     # A URL vai para dentro de um atributo HTML: `url_segura` já garantiu que o
     # esquema é http(s) com host, e o escape impede fechar o atributo e injetar
@@ -783,6 +809,10 @@ def secao_analise_livre() -> None:
         f'width="100%" height="900" frameborder="0" '
         f'allow="fullscreen; clipboard-write"></iframe>',
         height=920,
+    )
+    st.caption(
+        "Se o quadro acima aparecer vazio ou com “recusou a conexão”, sua sessão "
+        "do Superset expirou: entre de novo pelo botão do passo 1."
     )
 
 
