@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.env
+.claude/
+.pytest_cache/
+
+# Dados derivados — NÃO versionar.
+#
+# 1. `pe_tb_sinan.parquet` são 142 mil registros individuais de notificação do
+#    SINAN (idade, sexo, raça, comorbidades, status de HIV, município de
+#    residência). Microdado de saúde não vai para repositório.
+# 2. Tudo aqui é reproduzível pelos scripts em `etl/` — versionar seria guardar
+#    saída de build.
+#
+# Mesma convenção do dashboard-tb-recife e do dashboard-tb-v3.
+dados_dashboard/
