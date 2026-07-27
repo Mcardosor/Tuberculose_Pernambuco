@@ -752,7 +752,7 @@ def secao_analise_livre() -> None:
         "O **Apache Superset completo**, com os dados de Pernambuco já carregados. "
         "Diferente das outras seções, aqui nada está pré-definido: monte o gráfico "
         "que quiser, cruze as variáveis que quiser, rode SQL direto na base e salve "
-        "seus próprios dashboards."
+        "seus próprios dashboards — sem sair desta página."
     )
 
     raiz = url_segura(SUPERSET_URL)
@@ -762,43 +762,24 @@ def secao_analise_livre() -> None:
     if not raiz.endswith("/"):
         raiz += "/"
 
-    # ── Passo 1: entrar, obrigatoriamente FORA do quadro ──────────────────────
-    #
-    # O login do Superset é OAuth do GitHub, e o GitHub manda X-Frame-Options:
-    # DENY na tela de senha (proteção contra clickjacking). Quem clica em
-    # "entrar" dentro do iframe recebe um "github.com recusou a conexão" sem
-    # explicação nenhuma.
-    #
-    # Um aviso em texto não resolve — a pessoa clica no lugar natural, que é
-    # dentro do quadro. Por isso o quadro só aparece DEPOIS de a pessoa dizer
-    # que já entrou: o caminho errado deixa de existir.
-    st.markdown("##### 1 · Entre no Superset")
-    st.caption(
-        "O login é pela sua conta do GitHub e precisa acontecer numa aba separada — "
-        "o GitHub bloqueia a própria tela de senha dentro de quadros embutidos, "
-        "por segurança."
-    )
+    # ── Atalhos para quem prefere trabalhar numa aba dedicada ─────────────────
     colunas = st.columns(len(SUPERSET_ATALHOS) + 1)
-    colunas[0].link_button("↗ Abrir o Superset", raiz, width="stretch", type="primary")
+    colunas[0].link_button("↗ Abrir em outra aba", raiz, width="stretch")
     for col, (rotulo, caminho) in zip(colunas[1:], SUPERSET_ATALHOS):
         col.link_button(rotulo, urljoin(raiz, caminho), width="stretch")
 
-    st.divider()
-
-    # ── Passo 2: embed que se recusa a mostrar tela de login ──────────────────
+    # ── O Superset, aqui dentro ───────────────────────────────────────────────
     #
-    # Não basta pedir para a pessoa entrar antes: ela liga o embed sem estar
-    # logada, o Superset serve a própria tela de login dentro do quadro, ela
-    # clica em "entrar com GitHub" ali — e leva o "github.com recusou a
-    # conexão", porque o GitHub proíbe sua tela de senha em iframe.
+    # O login é OAuth do GitHub, e o GitHub manda X-Frame-Options: DENY na tela
+    # de senha (proteção contra clickjacking). Ou seja: iframe está fora de
+    # questão para o login — mas POPUP não, porque é uma janela de navegador de
+    # verdade, com barra de endereço visível.
     #
-    # A saída é o quadro decidir sozinho. O painel e o Superset estão na MESMA
-    # origem (painel.cenarios.unb.br), então este script consegue perguntar
-    # `/api/v1/me/` com o cookie de sessão: 200 = logado, e só aí o iframe é
-    # criado; qualquer outra coisa mostra o convite para entrar em aba nova.
-    # Assim nunca existe um formulário de login do GitHub dentro do quadro.
-    st.markdown("##### 2 · Trabalhe sem sair do painel")
-
+    # Então o fluxo é: o quadro pergunta `/api/v1/me/` (mesma origem, cookie
+    # viaja junto); se não houver sessão, oferece um botão que abre o login em
+    # popup e fica observando até a sessão existir — aí fecha o popup e troca o
+    # conteúdo pelo Superset embutido. A pessoa nunca sai da Análise Livre e
+    # nunca vê um formulário do GitHub dentro de um quadro.
     raiz_js = json.dumps(raiz)  # escapa aspas e barras com segurança
     components.html(
         """
@@ -806,35 +787,60 @@ def secao_analise_livre() -> None:
 <script>
 const RAIZ = %s;
 const area = document.getElementById('area');
+let vigia = null, popup = null;
 
-function convite(detalhe) {
+const embutir = () => {
+  if (vigia) { clearInterval(vigia); vigia = null; }
+  try { if (popup && !popup.closed) popup.close(); } catch (e) {}
+  area.innerHTML = `<iframe src="${RAIZ}" width="100%%" height="900"
+      style="border:1px solid #d0d7de;border-radius:12px"
+      allow="fullscreen; clipboard-write"></iframe>`;
+};
+
+const temSessao = () =>
+  fetch(RAIZ + 'api/v1/me/', {credentials: 'include'})
+    .then(r => r.ok).catch(() => false);
+
+function convite(estado) {
   area.innerHTML = `
-    <div style="border:1px dashed #d0d7de;border-radius:12px;padding:26px;
+    <div style="border:1px dashed #d0d7de;border-radius:12px;padding:30px;
                 text-align:center;background:rgba(43,123,185,.04)">
-      <div style="font-size:30px;line-height:1">🔐</div>
-      <p style="font-weight:700;color:#1a3a5c;margin:.6rem 0 .2rem">
-        Entre no Superset para usá-lo aqui dentro</p>
-      <p style="color:#57606a;font-size:.87rem;margin:0 0 1rem;max-width:46ch;
+      <div style="font-size:32px;line-height:1">🔐</div>
+      <p style="font-weight:700;color:#1a3a5c;margin:.6rem 0 .2rem;font-size:1.05rem">
+        Entre para usar o Superset aqui dentro</p>
+      <p style="color:#57606a;font-size:.87rem;margin:0 0 1.1rem;max-width:48ch;
                 display:inline-block">
-        O login é pela sua conta do GitHub, que por segurança não pode ser
-        aberto dentro de quadros embutidos. Entre na aba nova e volte — a
-        sessão passa a valer aqui.</p><br>
-      <a href="${RAIZ}" target="_blank" rel="noopener"
-         style="display:inline-block;background:#2B7BB9;color:#fff;
-                padding:10px 20px;border-radius:8px;font-weight:700;
-                text-decoration:none">↗ Entrar no Superset</a>
-      <p style="color:#8b949e;font-size:.75rem;margin-top:.9rem">${detalhe}</p>
+        Abre uma janelinha de login do GitHub. Assim que você entrar, ela fecha
+        sozinha e o Superset carrega nesta mesma tela.</p><br>
+      <button id="entrar" style="background:#2B7BB9;color:#fff;border:0;
+              padding:11px 22px;border-radius:8px;font-weight:700;
+              font-size:.92rem;cursor:pointer">🔓 Entrar no Superset</button>
+      <p id="estado" style="color:#8b949e;font-size:.75rem;margin-top:1rem">${estado || ''}</p>
     </div>`;
+
+  document.getElementById('entrar').onclick = () => {
+    const est = document.getElementById('estado');
+    popup = window.open(RAIZ, 'login_superset',
+                        'width=1000,height=780,menubar=no,toolbar=no');
+    if (!popup) {   // navegador bloqueou o popup
+      est.innerHTML = `Seu navegador bloqueou a janela.
+        <a href="${RAIZ}" target="_blank" rel="noopener">Abrir em outra aba</a>
+        e voltar aqui também funciona.`;
+      return;
+    }
+    est.textContent = 'Aguardando o login na janela…';
+    // observa até a sessão aparecer; para sozinho se a janela for fechada
+    vigia = setInterval(async () => {
+      if (await temSessao()) return embutir();
+      if (popup.closed) {
+        clearInterval(vigia); vigia = null;
+        est.textContent = 'A janela foi fechada antes de concluir o login.';
+      }
+    }, 1500);
+  };
 }
 
-fetch(RAIZ + 'api/v1/me/', {credentials: 'include'})
-  .then(r => {
-    if (!r.ok) return convite('Sessão não encontrada.');
-    area.innerHTML = `<iframe src="${RAIZ}" width="100%%" height="900"
-        style="border:1px solid #d0d7de;border-radius:12px"
-        allow="fullscreen; clipboard-write"></iframe>`;
-  })
-  .catch(() => convite('Não consegui verificar a sessão deste navegador.'));
+temSessao().then(ok => ok ? embutir() : convite(''));
 </script>
 """
         % raiz_js,
