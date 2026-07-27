@@ -1,0 +1,26 @@
+# Tema FIXADO em claro, de propósito.
+#
+# Sem `base`, o Streamlit segue o `prefers-color-scheme` do sistema de quem
+# acessa. Como o CSS deste painel é desenhado claro-primeiro (com o modo escuro
+# aplicado por cima pelo botão do styles.py), um visitante com o SO em modo
+# escuro via o pior dos dois: fundo claro do nosso CSS com os widgets escuros
+# nativos do Streamlit — texto escuro sobre caixa escura.
+#
+# O modo escuro do painel continua funcionando: é o toggle 🌙, que injeta o
+# `data-theme="dark"` e a folha correspondente.
+[theme]
+base = "light"
+backgroundColor = "#f6f8fa"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#24292f"
+primaryColor = "#2B7BB9"
+
+[server]
+fileWatcherType = "none"
+maxMessageSize = 400
+
+[browser]
+gatherUsageStats = false
+
+[client]
+showErrorDetails = false

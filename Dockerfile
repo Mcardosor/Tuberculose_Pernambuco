@@ -8,6 +8,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py .
 COPY src/ src/
+# Fixa o tema em claro — sem isso o Streamlit segue o prefers-color-scheme de
+# quem acessa e mistura widgets escuros com o nosso fundo claro.
+COPY .streamlit/ .streamlit/
 
 # Os dados (parquets, geojsons, agregados) entram por volume em produção —
 # são gerados pelo ETL e não pertencem à imagem. Ver docker-compose.yml.
