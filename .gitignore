@@ -4,13 +4,20 @@ __pycache__/
 .claude/
 .pytest_cache/
 
-# Dados derivados — NÃO versionar.
+# Dados derivados.
 #
-# 1. `pe_tb_sinan.parquet` são 142 mil registros individuais de notificação do
-#    SINAN (idade, sexo, raça, comorbidades, status de HIV, município de
-#    residência). Microdado de saúde não vai para repositório.
-# 2. Tudo aqui é reproduzível pelos scripts em `etl/` — versionar seria guardar
-#    saída de build.
+# Fora do repositório: `pe_tb_sinan.parquet` são 142 mil registros individuais
+# de notificação do SINAN (idade, sexo, raça, comorbidades, status de HIV,
+# município de residência) — microdado de saúde não vai para repositório. Idem
+# `pop_pe.parquet`, `municipios_pe.parquet` e `_agregados.json`, que são saída
+# de build reproduzível pelos scripts em `etl/`.
 #
-# Mesma convenção do dashboard-tb-recife e do dashboard-tb-v3.
-dados_dashboard/
+# Exceção deliberada: os GeoJSONs. São geometria pública da SES-PE, sem nenhum
+# dado de paciente, somam ~440 KB e dependem dos shapefiles em
+# `../Pernanbuco/shapefiles`, que não fazem parte deste repositório — versioná-los
+# é o que permite clonar e rodar o painel sem caçar os arquivos de origem.
+#
+# A barra tem que ficar como `dados_dashboard/*`, não `dados_dashboard/`: com a
+# forma de diretório o git nem entra na pasta e a negação abaixo seria ignorada.
+dados_dashboard/*
+!dados_dashboard/*.geojson

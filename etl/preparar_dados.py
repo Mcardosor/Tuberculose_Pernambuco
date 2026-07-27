@@ -156,8 +156,16 @@ def escreve_geojson_nivel(origem: Path, chave: str, campo: str, arquivo: str) ->
 
 
 def _dump(destino: Path, feats: list[dict]) -> None:
+    """Grava uma feição por linha.
+
+    Estes arquivos são versionados. Em linha única, qualquer regeneração vira
+    "1 linha alterada" no diff e não dá para ver o que mudou; com uma feição por
+    linha, o diff aponta exatamente quais municípios mudaram de geometria.
+    Continua sendo JSON válido e o custo em bytes é o dos '\\n'.
+    """
+    corpo = ",\n".join(json.dumps(f, ensure_ascii=False) for f in feats)
     destino.write_text(
-        json.dumps({"type": "FeatureCollection", "features": feats}, ensure_ascii=False),
+        '{"type": "FeatureCollection", "features": [\n' + corpo + "\n]}",
         encoding="utf-8",
     )
 
