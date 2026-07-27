@@ -87,6 +87,19 @@ DESFECHOS_ABANDONO = ("Abandono", "Abandono Primário")
 META_ABANDONO_OMS = 5.0   # %  — acima disso há risco de TB resistente
 META_CURA_OMS = 85.0      # %
 
+# Denominador mínimo para exibir uma TAXA por unidade geográfica.
+#
+# Taxa com denominador minúsculo é ruído, não informação: um município que
+# encerrou 2 casos e curou os 2 aparece com "100% de cura" e lidera o ranking
+# acima de um que curou 180 de 200. Filtrando um único ano, 47 dos 185
+# municípios de PE empatam em 100% — 33 deles com 3 ou menos encerrados.
+#
+# Abaixo deste limiar a unidade continua no mapa (em cinza, com o número
+# absoluto no hover), mas fica fora do ranking de taxas. É a prática usual em
+# boletim epidemiológico: suprimir a taxa, nunca o caso.
+DENOMINADOR_MINIMO_TAXA = 20
+COR_SEM_BASE = "#d8dee4"  # cinza das unidades sem denominador suficiente
+
 # Coinfecção HIV: denominador = testados, não o total de casos.
 HIV_TESTADO = ("Positivo", "Negativo")
 

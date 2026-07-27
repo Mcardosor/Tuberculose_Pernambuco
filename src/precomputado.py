@@ -19,6 +19,7 @@ depois de todo `preparar_dados.py`.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import asdict
 from functools import lru_cache
@@ -31,10 +32,29 @@ ARQUIVO = PASTA_DADOS / "_agregados.json"
 FONTES = (PARQUET, POP_PARQUET, MUNICIPIOS_PARQUET)
 
 
+def _hash(caminho: Path) -> str:
+    """Hash do CONTEÚDO do arquivo (blake2b, ~5 ms para os 3 MB do parquet)."""
+    h = hashlib.blake2b(digest_size=16)
+    with caminho.open("rb") as f:
+        for bloco in iter(lambda: f.read(1 << 20), b""):
+            h.update(bloco)
+    return h.hexdigest()
+
+
 def impressao_digital() -> dict[str, list]:
-    """Identidade dos Parquets de origem — invalida o store quando mudam."""
+    """Identidade dos Parquets de origem — invalida o store quando mudam.
+
+    Usa tamanho + hash do conteúdo, deliberadamente NÃO o mtime: qualquer cópia
+    de arquivo (deploy via tar/scp/docker) reescreve o mtime e invalidaria o
+    store, fazendo o pré-cômputo nunca sobreviver a um deploy — foi exatamente
+    o que aconteceu na primeira subida para a VM.
+
+    Com hash de conteúdo o `_agregados.json` viaja junto com os dados: vale em
+    qualquer máquina onde os arquivos sejam os mesmos, e se invalida assim que
+    um deles mudar de verdade.
+    """
     return {
-        p.name: [p.stat().st_size, p.stat().st_mtime_ns] if p.exists() else None
+        p.name: [p.stat().st_size, _hash(p)] if p.exists() else None
         for p in FONTES
     }
 

@@ -76,20 +76,39 @@ def test_filtro_fora_do_precomputo_cai_no_calculo_ao_vivo(anos, meta):
     assert indicadores.resumo(f)["total"] > 0
 
 
-def test_store_se_invalida_quando_o_parquet_muda():
+def test_store_se_invalida_quando_o_conteudo_do_parquet_muda():
     """Melhor recalcular do que servir número velho em painel de vigilância."""
     assert precomputado.disponivel()
-    st = PARQUET.stat()
-    original = (st.st_atime_ns, st.st_mtime_ns)
+    original = PARQUET.read_bytes()
     try:
-        os.utime(PARQUET, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000))
+        PARQUET.write_bytes(original + b"\x00")  # muda o conteúdo
         precomputado._store.cache_clear()
         assert not precomputado.disponivel()
         assert precomputado.obter("meta") is None
     finally:
-        os.utime(PARQUET, ns=original)
+        PARQUET.write_bytes(original)
         precomputado._store.cache_clear()
     assert precomputado.disponivel()
+
+
+def test_mtime_sozinho_nao_invalida_o_store():
+    """Copiar o arquivo (deploy) reescreve o mtime — e não pode invalidar nada.
+
+    Regressão: a impressão digital usava mtime, então o `_agregados.json` nunca
+    sobrevivia a um deploy. Na primeira subida para a VM o painel voltou a
+    calcular tudo ao vivo sem ninguém perceber.
+    """
+    assert precomputado.disponivel()
+    st = PARQUET.stat()
+    original = (st.st_atime_ns, st.st_mtime_ns)
+    try:
+        os.utime(PARQUET, ns=(st.st_atime_ns, st.st_mtime_ns + 5_000_000_000))
+        precomputado._store.cache_clear()
+        assert precomputado.disponivel(), "mtime novo não pode invalidar o store"
+        assert precomputado.obter("meta") is not None
+    finally:
+        os.utime(PARQUET, ns=original)
+        precomputado._store.cache_clear()
 
 
 def test_fingerprint_do_arquivo_bate_com_os_parquets_atuais():

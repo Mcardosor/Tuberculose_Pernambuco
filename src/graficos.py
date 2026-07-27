@@ -62,14 +62,22 @@ def donut(contagens: list[dict], altura: int = H_SMALL,
 
 
 def bar_h(contagens: list[dict], altura: int = H_SMALL, cor: str = COR_PRIMARIA,
-          pct_total: int | None = None, cores: list[str] | None = None) -> go.Figure:
-    """Barras horizontais (ranking). Com pct_total, mostra o % ao lado do valor."""
+          pct_total: int | None = None, cores: list[str] | None = None,
+          texto: list[str] | None = None) -> go.Figure:
+    """Barras horizontais (ranking).
+
+    `texto` sobrescreve o rótulo de cada barra — usado para mostrar a taxa junto
+    do seu denominador (`92,0%  (n=200)`), sem o que não dá para julgar se o
+    número tem peso.
+    """
     dados = list(reversed(contagens))
     valores = [d["valor"] for d in dados]
-    texto = (
-        [f"{fmt_int(v)}  ({fmt_dec(v / pct_total * 100)}%)" for v in valores]
-        if pct_total else [fmt_int(v) for v in valores]
-    )
+    if texto is not None:
+        texto = list(reversed(texto))
+    elif pct_total:
+        texto = [f"{fmt_int(v)}  ({fmt_dec(v / pct_total * 100)}%)" for v in valores]
+    else:
+        texto = [fmt_int(v) for v in valores]
     fig = go.Figure(go.Bar(
         x=valores, y=[d["label"] for d in dados], orientation="h",
         marker=dict(color=list(reversed(cores)) if cores else cor, cornerradius=5,

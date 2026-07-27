@@ -21,38 +21,62 @@ from functools import lru_cache
 import plotly.graph_objects as go
 
 from src.constantes import (
-    GEOJSON, GRAFICO_BASE, NIVEIS_GEO,
+    COR_SEM_BASE, DENOMINADOR_MINIMO_TAXA, GEOJSON, GRAFICO_BASE, NIVEIS_GEO,
     SEQ_ABANDONO, SEQ_CASOS, SEQ_CURA, SEQ_INCIDENCIA,
     fmt_dec, fmt_int,
 )
 
 # ── Métricas oferecidas no seletor do mapa ────────────────────────────────────
+#
+# `denominador` marca as métricas que são TAXA: elas só são exibidas onde houver
+# base suficiente (ver DENOMINADOR_MINIMO_TAXA). `quantis` marca as que precisam
+# de reposicionamento por ECDF — as contagens, que são muito assimétricas.
 METRICAS = {
     "casos": {
         "rotulo": "Casos notificados",
         "escala": SEQ_CASOS,
         "formato": fmt_int,
         "sufixo": "",
+        "denominador": None,
+        "quantis": True,
     },
     "incidencia": {
         "rotulo": "Incidência /100 mil",
         "escala": SEQ_INCIDENCIA,
         "formato": fmt_dec,
         "sufixo": " /100 mil",
+        "denominador": None,
+        "quantis": True,
     },
     "abandono_pct": {
         "rotulo": "Abandono %",
         "escala": SEQ_ABANDONO,
         "formato": fmt_dec,
         "sufixo": "%",
+        "denominador": "encerrados",
+        "quantis": False,
     },
     "cura_pct": {
         "rotulo": "Cura %",
         "escala": SEQ_CURA,
         "formato": fmt_dec,
         "sufixo": "%",
+        "denominador": "encerrados",
+        "quantis": False,
     },
 }
+
+
+def tem_base(unidade: dict, metrica: str) -> bool:
+    """A unidade tem denominador suficiente para esta métrica ser confiável?"""
+    campo = METRICAS.get(metrica, {}).get("denominador")
+    if not campo:
+        return True
+    return unidade.get(campo, 0) >= DENOMINADOR_MINIMO_TAXA
+
+
+def usa_quantis(metrica: str) -> bool:
+    return bool(METRICAS.get(metrica, {}).get("quantis"))
 
 @lru_cache(maxsize=3)
 def geojson(nivel: str) -> dict:
@@ -201,33 +225,50 @@ def figura(dados: list[dict], nivel: str, metrica: str = "casos",
     """
     cfg = METRICAS.get(metrica, METRICAS["casos"])
     fmt = cfg["formato"]
-    valores = [d[metrica] for d in dados]
     ids = [d["id"] for d in dados]
     if altura is None:
         altura = altura_sugerida(nivel, ids)
 
-    hover = [
-        f"<b>{d['nome']}</b><br>"
-        f"Casos: <b>{fmt_int(d['casos'])}</b>"
-        + (f" · novos: <b>{fmt_int(d['novos'])}</b>" if d["novos"] != d["casos"] else "")
-        + f"<br>Incidência: <b>{fmt_dec(d['incidencia'])}</b> /100 mil"
-        + f"<br>Cura: <b>{fmt_dec(d['cura_pct'])}%</b> · "
-          f"Abandono: <b>{fmt_dec(d['abandono_pct'])}%</b>"
-        + f"<br>Óbito por TB: <b>{fmt_dec(d['obito_pct'])}%</b> · "
-          f"HIV+: <b>{fmt_dec(d['hiv_pct'])}%</b>"
-        + (f"<br><span style='color:#8b949e'>população {fmt_int(d['populacao'])} pessoas-ano</span>"
-           if d["populacao"] else "")
-        + ("" if nivel == "municipio"
-           else "<br><span style='color:#8b949e'>clique para detalhar</span>")
-        for d in dados
-    ]
+    # Taxa sem base suficiente sai da camada colorida e vai para uma camada
+    # cinza: continua no mapa (o caso existe e a geometria não pode sumir), mas
+    # não recebe uma cor que sugira desempenho bom ou ruim.
+    confiaveis = [d for d in dados if tem_base(d, metrica)]
+    sem_base = [d for d in dados if not tem_base(d, metrica)]
+    campo_den = cfg["denominador"]
 
-    # Nas contagens e na incidência a distribuição é muito concentrada e pede a
-    # escala por quantis; cura% e abandono% já são bem distribuídos e ficam mais
-    # fáceis de ler numa escala linear.
+    def _hover(d: dict, confiavel: bool = True) -> str:
+        txt = (
+            f"<b>{d['nome']}</b><br>"
+            f"Casos: <b>{fmt_int(d['casos'])}</b>"
+            + (f" · novos: <b>{fmt_int(d['novos'])}</b>"
+               if d["novos"] != d["casos"] else "")
+            + f"<br>Incidência: <b>{fmt_dec(d['incidencia'])}</b> /100 mil"
+        )
+        if confiavel:
+            txt += (f"<br>Cura: <b>{fmt_dec(d['cura_pct'])}%</b> · "
+                    f"Abandono: <b>{fmt_dec(d['abandono_pct'])}%</b>"
+                    f"<br>Óbito por TB: <b>{fmt_dec(d['obito_pct'])}%</b> · "
+                    f"HIV+: <b>{fmt_dec(d['hiv_pct'])}%</b>")
+            if campo_den:
+                txt += (f"<br><span style='color:#8b949e'>taxa sobre "
+                        f"{fmt_int(d[campo_den])} casos encerrados</span>")
+        else:
+            # sem base: mostra o absoluto e diz por que a taxa foi omitida
+            txt += (f"<br><span style='color:#8b949e'>apenas "
+                    f"{fmt_int(d.get(campo_den, 0))} casos encerrados — taxa "
+                    f"omitida por base insuficiente<br>(mínimo "
+                    f"{DENOMINADOR_MINIMO_TAXA})</span>")
+        if nivel != "municipio":
+            txt += "<br><span style='color:#8b949e'>clique para detalhar</span>"
+        return txt
+
+    valores = [d[metrica] for d in confiaveis]
+
+    # Contagens são muito assimétricas e pedem reposicionamento por ECDF; as
+    # taxas já são bem distribuídas e ficam mais legíveis em escala linear.
     z = valores
     ticks = None
-    if metrica in ("casos", "incidencia"):
+    if usa_quantis(metrica):
         transformado = _escala_quantis(valores)
         if transformado:
             z, posicoes, reais = transformado
@@ -236,12 +277,12 @@ def figura(dados: list[dict], nivel: str, metrica: str = "casos",
     choropleth = dict(
         geojson=geojson(nivel),
         featureidkey="id",
-        locations=ids,
+        locations=[d["id"] for d in confiaveis],
+        customdata=[_hover(d) for d in confiaveis],
         z=z,
         colorscale=_colorscale(cfg["escala"]),
         marker_line_color="#ffffff",
         marker_line_width=0.6 if nivel == "municipio" else 1.4,
-        customdata=hover,
         hovertemplate="%{customdata}<extra></extra>",
         colorbar=dict(
             title=dict(text=cfg["rotulo"], side="right",
@@ -259,6 +300,23 @@ def figura(dados: list[dict], nivel: str, metrica: str = "casos",
         choropleth["colorbar"]["ticktext"] = ticks[1]
 
     fig = go.Figure(go.Choropleth(**choropleth))
+
+    if sem_base:
+        # Camada cinza, sem colorbar e sem escala própria: só marca "existe,
+        # mas não dá para calcular taxa aqui".
+        fig.add_trace(go.Choropleth(
+            geojson=geojson(nivel),
+            featureidkey="id",
+            locations=[d["id"] for d in sem_base],
+            z=[0] * len(sem_base),
+            colorscale=[[0, COR_SEM_BASE], [1, COR_SEM_BASE]],
+            showscale=False,
+            marker_line_color="#ffffff",
+            marker_line_width=0.6 if nivel == "municipio" else 1.4,
+            customdata=[_hover(d, confiavel=False) for d in sem_base],
+            hovertemplate="%{customdata}<extra></extra>",
+        ))
+
     fig.update_layout(
         **{k: v for k, v in GRAFICO_BASE.items()
            if k not in ("xaxis", "yaxis", "margin")},

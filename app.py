@@ -24,8 +24,8 @@ import streamlit.components.v1 as components
 from src import banco, graficos, indicadores, mapas, precomputado, styles
 from src.constantes import (
     ANO_FIM, ANO_INICIO, COR_ABANDONO, COR_CURA, COR_HIV, COR_MASC, COR_OBITO,
-    META_ABANDONO_OMS, NIVEIS_GEO, NIVEL_PADRAO, PLOTLY_CFG,
-    fmt_dec, fmt_int,
+    DENOMINADOR_MINIMO_TAXA, META_ABANDONO_OMS, NIVEIS_GEO, NIVEL_PADRAO,
+    PLOTLY_CFG, fmt_dec, fmt_int,
 )
 from src.filtros import Filtros
 from src.seguranca import url_segura
@@ -354,28 +354,62 @@ def secao_mapa(f: Filtros) -> None:
             if clicado and clicado != unidade:
                 st.session_state["_unidade_clique"] = clicado
                 st.rerun(scope="fragment")
+        # A legenda tem que descrever a escala REALMENTE usada — antes ela
+        # dizia "quantis" mesmo nas taxas, que são lineares.
         st.caption(
-            "Escala em quantis (a Região Metropolitana concentra a maior parte dos "
-            "casos, o que achataria uma escala linear) · contornos: SES-PE."
+            ("Escala em quantis (a Região Metropolitana concentra a maior parte "
+             "dos casos, o que achataria uma escala linear)"
+             if mapas.usa_quantis(metrica)
+             else f"Escala linear · cinza = menos de {DENOMINADOR_MINIMO_TAXA} "
+                  "casos encerrados, taxa não exibida")
+            + " · contornos: SES-PE."
         )
 
     with col_rank:
         st.markdown(f"**{rotulo_metrica} — ranking por {cfg['rotulo'].lower()}**")
-        top = sorted(com_casos, key=lambda d: d[metrica], reverse=True)
+
+        # Taxa só entra no ranking com denominador suficiente. Sem isso, um
+        # município que encerrou 2 casos e curou os 2 lidera com "100%" acima
+        # de um que curou 180 de 200 — é ruído, não desempenho.
+        elegiveis = [d for d in com_casos if mapas.tem_base(d, metrica)]
+        excluidos = len(com_casos) - len(elegiveis)
+        top = sorted(elegiveis, key=lambda d: d[metrica], reverse=True)
+
         # Cabem ~26 px por barra na altura do mapa; nos níveis de região e
         # macro a lista inteira cabe, no de município mostramos o topo.
         limite = min(len(top), max(6, altura // 26))
-        st.plotly_chart(
-            graficos.bar_h(
-                [{"label": d["nome"], "valor": d[metrica]} for d in top[:limite]],
-                altura=altura,
-                cor="#e8871e" if metrica != "cura_pct" else COR_CURA,
-            ),
-            width="stretch", config=PLOTLY_CFG, key=f"rank_{nivel}_{metrica}",
-        )
+        campo_den = mapas.METRICAS[metrica]["denominador"]
+        fmt_metrica = mapas.METRICAS[metrica]["formato"]
+        sufixo = mapas.METRICAS[metrica]["sufixo"]
+
+        if top:
+            st.plotly_chart(
+                graficos.bar_h(
+                    [{"label": d["nome"], "valor": d[metrica]} for d in top[:limite]],
+                    altura=altura,
+                    cor="#e8871e" if metrica != "cura_pct" else COR_CURA,
+                    # com denominador ao lado do número, dá para julgar o peso
+                    texto=[f"{fmt_metrica(d[metrica])}{sufixo}"
+                           + (f"  (n={fmt_int(d[campo_den])})" if campo_den else "")
+                           for d in top[:limite]],
+                ),
+                width="stretch", config=PLOTLY_CFG, key=f"rank_{nivel}_{metrica}",
+            )
+        else:
+            st.info(f"Nenhum(a) {cfg['rotulo'].lower()} com pelo menos "
+                    f"{DENOMINADOR_MINIMO_TAXA} casos encerrados neste recorte.")
+
+        legendas = []
         if len(top) > limite:
-            st.caption(f"Top {limite} de {len(top)} {cfg['plural']} com casos — "
-                       "a lista completa está na tabela abaixo.")
+            legendas.append(f"Top {limite} de {len(top)}")
+        if excluidos:
+            legendas.append(
+                f"{excluidos} {cfg['plural']} fora do ranking e em cinza no mapa "
+                f"(menos de {DENOMINADOR_MINIMO_TAXA} casos encerrados — a taxa "
+                "seria ruído)"
+            )
+        if legendas:
+            st.caption(" · ".join(legendas) + ". Lista completa na tabela abaixo.")
 
     if unidade:
         st.divider()

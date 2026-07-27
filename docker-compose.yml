@@ -1,0 +1,22 @@
+services:
+  dashboard-tb-pernambuco:
+    build: .
+    container_name: dashboard-tb-pernambuco
+    restart: unless-stopped
+    ports:
+      # 8501 demográfico · 8502 TB nacional · 8503 Recife · 8505 hanseníase
+      # · 8506 Superset — 8504 estava livre
+      - "8504:8501"
+    volumes:
+      - ./dados_dashboard:/app/dados_dashboard:ro
+    environment:
+      # Endereço público do dashboard de PE no Superset, usado pela aba
+      # Análise Livre. O iframe só funciona com FRAME_ANCESTORS liberado no
+      # superset_config.py; sem isso, o botão "abrir em nova aba" cobre o caso.
+      - SUPERSET_URL=https://telessaude.unb.br/cenarios/superset/superset/dashboard/tuberculose-pernambuco/?standalone=1
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/cenarios/tbpe/_stcore/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

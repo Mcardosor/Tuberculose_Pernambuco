@@ -148,6 +148,60 @@ def test_ids_do_geojson_casam_com_os_dados(padrao):
         )
 
 
+# ── Taxa com denominador pequeno ──────────────────────────────────────────────
+def test_taxa_exige_denominador_minimo():
+    """Taxa com base minúscula não pode entrar no ranking.
+
+    Regressão: filtrando um único ano, 47 dos 185 municípios empatavam em
+    "100% de cura" — 33 deles com 3 ou menos casos encerrados. Um município que
+    curou 2 de 2 liderava acima de um que curou 180 de 200.
+    """
+    from src import mapas
+    from src.constantes import DENOMINADOR_MINIMO_TAXA
+
+    pequeno = {"encerrados": DENOMINADOR_MINIMO_TAXA - 1, "cura_pct": 100.0}
+    grande = {"encerrados": DENOMINADOR_MINIMO_TAXA, "cura_pct": 72.0}
+
+    assert not mapas.tem_base(pequeno, "cura_pct")
+    assert not mapas.tem_base(pequeno, "abandono_pct")
+    assert mapas.tem_base(grande, "cura_pct")
+
+    # contagem não tem denominador — nunca é suprimida
+    assert mapas.tem_base(pequeno, "casos")
+    assert mapas.tem_base(pequeno, "incidencia")
+
+
+def test_escala_de_quantis_so_nas_contagens():
+    """A legenda descreve a escala usada; taxa é linear, contagem é por quantil.
+
+    Regressão: a legenda dizia "escala em quantis" em todas as métricas,
+    inclusive nas taxas, que são lineares.
+    """
+    from src import mapas
+
+    assert mapas.usa_quantis("casos")
+    assert mapas.usa_quantis("incidencia")
+    assert not mapas.usa_quantis("cura_pct")
+    assert not mapas.usa_quantis("abandono_pct")
+
+
+def test_unidades_sem_base_continuam_no_mapa(padrao):
+    """Suprimir a TAXA não pode significar sumir com o município do mapa."""
+    from conftest import sem_cache
+    from src import indicadores, mapas
+    from src.filtros import Filtros
+
+    f = Filtros(anos=(max(padrao.anos),))  # um ano só: muitos denominadores pequenos
+    dados = sem_cache(indicadores.mapa)(f, "municipio")
+    sem_base = [d for d in dados if not mapas.tem_base(d, "cura_pct")]
+    assert sem_base, "um ano só deveria produzir municípios com base insuficiente"
+
+    fig = mapas.figura(dados, "municipio", "cura_pct")
+    desenhados = sum(len(t.locations) for t in fig.data)
+    assert desenhados == len(dados), "toda unidade tem que aparecer no mapa"
+    assert len(fig.data) == 2, "esperava camada colorida + camada cinza"
+
+
 # ── Enquadramento do mapa ─────────────────────────────────────────────────────
 def test_altura_do_mapa_acompanha_a_proporcao_do_recorte():
     """PE inteiro é largo e baixo (~2,7:1) e pede mapa achatado; um município
