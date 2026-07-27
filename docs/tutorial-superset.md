@@ -39,7 +39,7 @@ No menu de cima: **Gráficos** → botão **+ Gráfico** (canto direito).
 ### 2 · Escolha os dados e o tipo
 
 - **Escolha um conjunto de dados:** digite `tuberculose_pe` e selecione
-- **Escolha o tipo de gráfico:** clique em **Barra** (ícone de barras)
+- **Escolha o tipo de gráfico:** clique em **Gráfico de Barras**
 - Botão **Criar novo gráfico**
 
 ### 3 · Monte a pergunta
@@ -48,9 +48,10 @@ A tela tem três partes: fontes à esquerda, controles no meio, resultado à dir
 
 No meio, preencha:
 
-- **Dimensões** → clique em *Solte uma coluna aqui* → escolha **`macro_saude`**
-- **Métricas** → clique em *Solte uma métrica aqui* → aba **Métricas salvas** →
-  escolha **`Casos`**
+- **Dimensões** → clique em *Deixe sua coluna aqui ou clique em* → escolha
+  **`macro_saude`**
+- **Métricas** → clique em *Colocar colunas/métricas aqui ou clique* → aba
+  **Métricas salvas** → escolha **`Casos`**
 
 ### 4 · Veja o resultado
 
@@ -74,13 +75,13 @@ Trocando **uma coisa** de cada vez, você cobre quase tudo que se faz no dia a d
 
 | Quero ver… | Dimensão | Tipo de gráfico |
 |---|---|---|
-| Evolução ao longo do tempo | `ano_notificacao` | Linha |
-| Ranking de municípios | `municipio` | Barra |
-| Distribuição por sexo | `sexo` | Pizza |
-| Desfecho do tratamento | `situacao_encerramento` | Pizza ou Barra |
-| Forma clínica | `forma` | Pizza |
-| Perfil racial | `raca_cor` | Barra |
-| Cruzamento de duas variáveis | `sexo` + `raca_cor` | Barra empilhada |
+| Evolução ao longo do tempo | `ano_notificacao` | Gráfico de linhas |
+| Ranking de municípios | `municipio` | Gráfico de Barras |
+| Distribuição por sexo | `sexo` | Gráfico de pizza |
+| Desfecho do tratamento | `situacao_encerramento` | Gráfico de pizza ou Barras |
+| Forma clínica | `forma` | Gráfico de pizza |
+| Perfil racial | `raca_cor` | Gráfico de Barras |
+| Cruzamento de duas variáveis | `sexo` + `raca_cor` | Gráfico de Barras |
 
 Para cruzar duas variáveis, basta arrastar **duas** colunas para *Dimensões*.
 
@@ -102,8 +103,9 @@ somar as barras, vai dar os casos de 2025 — não os 142.365 do total.
 
 ## Três armadilhas comuns
 
-**1. O gráfico não aparece e a tela pede "valores obrigatórios".**
-Falta a métrica ou a dimensão. Todo gráfico precisa de pelo menos uma métrica.
+**1. Aparece "Adicionar controle de valores obrigatórios para visualizar o gráfico".**
+Traduzindo do supersetês: falta preencher a **Métrica** (ou a dimensão). Todo
+gráfico precisa de pelo menos uma métrica — no nosso caso, `Casos`.
 
 **2. Um município aparece com 100% de cura.**
 Cuidado com **denominador pequeno**. Município que encerrou 2 casos e curou os 2
