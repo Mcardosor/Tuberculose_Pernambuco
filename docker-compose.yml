@@ -13,7 +13,7 @@ services:
       # Endereço público do dashboard de PE no Superset, usado pela aba
       # Análise Livre. O iframe só funciona com FRAME_ANCESTORS liberado no
       # superset_config.py; sem isso, o botão "abrir em nova aba" cobre o caso.
-      - SUPERSET_URL=https://telessaude.unb.br/cenarios/superset/superset/dashboard/tuberculose-pernambuco/?standalone=1
+      - SUPERSET_URL=https://painel.cenarios.unb.br/cenarios/superset/superset/dashboard/tuberculose-pernambuco/?standalone=1
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/cenarios/tbpe/_stcore/health')"]
       interval: 30s

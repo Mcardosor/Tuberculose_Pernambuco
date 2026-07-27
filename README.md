@@ -171,7 +171,7 @@ Superset bloqueia embed por padrão; para liberar, defina no serviço do
 [`dashboard-tb-pe`](../dashboard-tb-pe):
 
 ```bash
-SUPERSET_FRAME_ANCESTORS="http://localhost:8512 https://telessaude.unb.br"
+SUPERSET_FRAME_ANCESTORS="http://localhost:8512 https://painel.cenarios.unb.br"
 ```
 
 Sem essa variável o iframe fica em branco e o botão "Abrir em nova aba" é o

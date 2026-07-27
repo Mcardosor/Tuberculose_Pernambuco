@@ -74,7 +74,7 @@ def test_url_perigosa_e_recusada(entrada):
 
 @pytest.mark.parametrize("entrada", [
     "http://localhost:8590/superset/dashboard/tuberculose-pe/?standalone=1",
-    "https://telessaude.unb.br/superset",
+    "https://painel.cenarios.unb.br/superset",
 ])
 def test_url_legitima_e_aceita(entrada):
     assert url_segura(entrada) == entrada
