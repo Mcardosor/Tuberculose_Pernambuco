@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import html
 import os
+from urllib.parse import urljoin
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -68,11 +69,24 @@ ANOS = META["anos"]
 ANO_PARCIAL = META["ano_parcial"]
 ANOS_COMPLETOS = [a for a in ANOS if a != ANO_PARCIAL] or ANOS
 
-# URL do Superset de PE — configurável por ambiente (produção usa a VM).
-SUPERSET_URL = os.getenv(
-    "SUPERSET_URL",
-    "http://localhost:8590/superset/dashboard/tuberculose-pe/?standalone=1",
-)
+# Raiz da aplicação Superset — NÃO um dashboard específico.
+#
+# A Análise Livre existe para a pessoa montar a análise que ela quiser: criar
+# gráfico novo, cruzar variáveis, rodar SQL, salvar dashboard próprio. Apontar
+# para `/dashboard/<slug>/?standalone=1` daria o oposto disso — `standalone=1`
+# é justamente o parâmetro que remove a navegação do Superset e entrega só um
+# painel fechado, que é o que este painel já faz nas outras seções.
+SUPERSET_URL = os.getenv("SUPERSET_URL", "http://localhost:8590/")
+
+# Atalhos para as áreas que interessam a quem vai explorar. São caminhos
+# relativos à raiz acima, montados com urljoin para funcionar tanto em
+# localhost quanto atrás do /cenarios/superset/ em produção.
+SUPERSET_ATALHOS = [
+    ("📊 Gráficos", "chart/list/"),
+    ("🗂️ Dashboards", "dashboard/list/"),
+    ("🧮 SQL Lab", "sqllab/"),
+    ("🗃️ Conjuntos de dados", "tablemodelview/list/"),
+]
 
 _MS = dict(label_visibility="collapsed", placeholder="Todos")
 
@@ -734,40 +748,41 @@ def secao_comorbidades(f: Filtros) -> None:
 def secao_analise_livre() -> None:
     st.subheader("Análise livre no Apache Superset")
     st.markdown(
-        "Exploração ad-hoc dos microdados de PE no **Superset** — a mesma instância "
-        "usada na entrega do painel estadual. Ali dá para montar gráficos novos, "
-        "cruzar variáveis e salvar dashboards próprios, sem passar por este painel."
+        "O **Apache Superset completo**, com os dados de Pernambuco já carregados. "
+        "Diferente das outras seções, aqui nada está pré-definido: monte o gráfico "
+        "que quiser, cruze as variáveis que quiser, rode SQL direto na base e salve "
+        "seus próprios dashboards."
     )
 
-    col_url, col_abrir = st.columns([4, 1])
-    url = col_url.text_input(
-        "URL do Superset", value=SUPERSET_URL, label_visibility="collapsed",
-        help="Definida pela variável de ambiente SUPERSET_URL. "
-             "Em produção aponta para a instância na VM.",
-    )
-
-    # A URL é texto livre digitado pelo usuário e vai parar dentro de um atributo
-    # HTML. Sem validação, algo como `x" onload="…` fecharia o atributo e injetaria
-    # script na própria página; e um `javascript:` no src executaria direto.
-    # Por isso: só http/https passam, e o valor é escapado antes de virar HTML.
-    url_ok = url_segura(url)
-    if url_ok is None:
-        st.error("URL inválida — informe um endereço `http://` ou `https://`.")
+    raiz = url_segura(SUPERSET_URL)
+    if raiz is None:
+        st.error("`SUPERSET_URL` inválida — informe um endereço `http://` ou `https://`.")
         return
+    if not raiz.endswith("/"):
+        raiz += "/"
 
-    col_abrir.link_button("↗ Abrir em nova aba", url_ok, width="stretch")
+    # ── Atalhos + entrada para a raiz da aplicação ────────────────────────────
+    colunas = st.columns(len(SUPERSET_ATALHOS) + 1)
+    colunas[0].link_button("↗ Abrir o Superset", raiz, width="stretch",
+                           type="primary")
+    for col, (rotulo, caminho) in zip(colunas[1:], SUPERSET_ATALHOS):
+        col.link_button(rotulo, urljoin(raiz, caminho), width="stretch")
 
     st.caption(
-        "⚠️ O Superset bloqueia embed por padrão (Content Security Policy). Se o "
-        "quadro abaixo aparecer em branco, é isso: libere este domínio em "
-        "`SUPERSET_FRAME_ANCESTORS` no `superset_config.py` do projeto "
-        "`dashboard-tb-pe`, ou use o botão de abrir em nova aba."
+        "⚠️ O login do Superset é feito por conta do GitHub e **não funciona dentro "
+        "do quadro abaixo** — o GitHub proíbe ser embutido em iframe. Se o quadro "
+        "aparecer em branco ou pedindo login, entre uma vez pelo botão "
+        "**Abrir o Superset**; depois disso a sessão vale aqui também."
     )
 
+    # A URL vai para dentro de um atributo HTML: `url_segura` já garantiu que o
+    # esquema é http(s) com host, e o escape impede fechar o atributo e injetar
+    # outro (`x" onload="…`).
     components.html(
-        f'<iframe class="superset-frame" src="{html.escape(url_ok, quote=True)}" '
-        f'width="100%" height="860" frameborder="0" allow="fullscreen"></iframe>',
-        height=880,
+        f'<iframe class="superset-frame" src="{html.escape(raiz, quote=True)}" '
+        f'width="100%" height="900" frameborder="0" '
+        f'allow="fullscreen; clipboard-write"></iframe>',
+        height=920,
     )
 
 

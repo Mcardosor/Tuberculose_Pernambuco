@@ -20,10 +20,15 @@ _CSS = """
 
   .stDeployButton { display: none !important; }
 
-  [data-testid="stButton"] button[kind="primary"] {
-    background-color: #2B7BB9 !important; border-color: #2B7BB9 !important; color: #fff !important;
+  /* O rótulo do botão é um <p> interno: sem o `*` ele herda `p { color: #24292f }`
+     e o texto sai escuro sobre o azul (contraste 3,2 — abaixo do mínimo). */
+  [data-testid="stButton"] button[kind="primary"],
+  [data-testid="stButton"] button[kind="primary"] * {
+    background-color: #2B7BB9 !important; border-color: #2B7BB9 !important;
+    color: #ffffff !important;
   }
-  [data-testid="stButton"] button[kind="primary"]:hover {
+  [data-testid="stButton"] button[kind="primary"]:hover,
+  [data-testid="stButton"] button[kind="primary"]:hover * {
     background-color: #1a5c8a !important; border-color: #1a5c8a !important;
   }
 
@@ -43,28 +48,43 @@ _CSS = """
     color: #1a3a5c !important; font-weight: 600 !important;
   }
 
-  /* ── Navegação principal: o segmented control vira barra de seções ───────── */
-  [data-testid="stSegmentedControl"] > div {
+  /* ── Navegação principal: o segmented control vira barra de seções ─────────
+     ATENÇÃO aos seletores: o Streamlit usa `data-testid="stButtonGroup"` no
+     container (não "stSegmentedControl") e marca o item ativo pelo atributo
+     `kind="segmented_controlActive"` — não há aria-checked. Errar isso faz a
+     regra não aplicar em silêncio: no tema claro ninguém nota, porque o padrão
+     do Streamlit já é claro; no escuro o rótulo fica preto sobre preto. */
+  [data-testid="stButtonGroup"] {
     gap: 4px !important; background: rgba(0,0,0,.02); padding: 6px;
     border-radius: 12px; border: 1px solid #d0d7de;
     display: flex !important; flex-wrap: wrap !important;
   }
-  [data-testid="stSegmentedControl"] button {
-    background: transparent !important; border: 1px solid transparent !important;
-    border-radius: 8px !important; color: #57606a !important;
+  button[kind="segmented_control"],
+  button[kind="segmented_controlActive"] {
+    border: 1px solid transparent !important; border-radius: 8px !important;
     font-size: 13px !important; font-weight: 600 !important;
     padding: 9px 16px !important; flex: 1 1 auto !important;
     justify-content: center !important;
     transition: background .15s, border-color .15s, color .15s, transform .1s !important;
   }
-  [data-testid="stSegmentedControl"] button:hover {
-    background: rgba(0,0,0,.04) !important; border-color: #d0d7de !important;
-    color: #24292f !important; transform: translateY(-1px);
+  button[kind="segmented_control"],
+  button[kind="segmented_control"] * {
+    background: transparent !important; color: #57606a !important;
   }
-  [data-testid="stSegmentedControl"] button[aria-checked="true"] {
-    background: rgba(224,123,84,.12) !important;
+  button[kind="segmented_control"]:hover,
+  button[kind="segmented_control"]:hover * {
+    background: rgba(0,0,0,.04) !important; color: #24292f !important;
+  }
+  button[kind="segmented_control"]:hover {
+    border-color: #d0d7de !important; transform: translateY(-1px);
+  }
+  button[kind="segmented_controlActive"],
+  button[kind="segmented_controlActive"] * {
+    background: rgba(224,123,84,.12) !important; color: #1a3a5c !important;
+    font-weight: 700 !important;
+  }
+  button[kind="segmented_controlActive"] {
     border-color: rgba(224,123,84,.32) !important;
-    color: #1a3a5c !important; font-weight: 700 !important;
     box-shadow: 0 2px 8px rgba(224,123,84,.12) !important;
   }
 
@@ -79,7 +99,10 @@ _CSS = """
 
   h1, h2, h3                { color: #1a3a5c; }
   p, span, label            { color: #24292f; }
-  [data-testid="stCaption"] { color: #57606a; }
+  /* o testid é stCaptionContainer — "stCaption" não existe e a regra nunca
+     aplicava, deixando a legenda herdar a cor de `p` */
+  [data-testid="stCaptionContainer"],
+  [data-testid="stCaptionContainer"] * { color: #57606a; }
   hr                        { border-color: #d0d7de; }
 
   /* ── KPI Cards ───────────────────────────────────────────────────────────── */
@@ -257,7 +280,8 @@ _DARK_CSS = """
   [data-theme="dark"] [data-testid="stSidebar"] * { color: #e6edf3 !important; }
   [data-theme="dark"] h1, [data-theme="dark"] h2, [data-theme="dark"] h3 { color: #79c0ff !important; }
   [data-theme="dark"] p, [data-theme="dark"] span, [data-theme="dark"] label { color: #e6edf3 !important; }
-  [data-theme="dark"] [data-testid="stCaption"] { color: #8b949e !important; }
+  [data-theme="dark"] [data-testid="stCaptionContainer"],
+  [data-theme="dark"] [data-testid="stCaptionContainer"] * { color: #9aa4b2 !important; }
   [data-theme="dark"] hr, [data-theme="dark"] [data-testid="stDivider"] { background: linear-gradient(90deg, transparent, #30363d, transparent) !important; }
   [data-theme="dark"] .kpi-card { background: linear-gradient(160deg, #1c2128 0%, #161b22 100%) !important; border-color: #30363d !important; box-shadow: 0 2px 8px rgba(0,0,0,.4) !important; }
   [data-theme="dark"] .kpi-label { color: #8b949e !important; }
@@ -274,6 +298,70 @@ _DARK_CSS = """
   [data-theme="dark"] .stTabs [data-baseweb="tab"] { color: #8b949e !important; }
   [data-theme="dark"] .stTabs [data-baseweb="tab"]:hover { background: rgba(255,255,255,.06) !important; border-color: #30363d !important; color: #e6edf3 !important; }
   [data-theme="dark"] .stTabs [aria-selected="true"] { background: rgba(224,123,84,.12) !important; border-color: rgba(224,123,84,.3) !important; color: #e6edf3 !important; }
+
+  /* Navegação por seções (stButtonGroup + kind=segmented_control*) */
+  [data-theme="dark"] [data-testid="stButtonGroup"] {
+    background: rgba(255,255,255,.03) !important; border-color: #30363d !important;
+  }
+  [data-theme="dark"] button[kind="segmented_control"],
+  [data-theme="dark"] button[kind="segmented_control"] * {
+    background: transparent !important; color: #c9d1d9 !important;
+  }
+  [data-theme="dark"] button[kind="segmented_control"] { border-color: transparent !important; }
+  [data-theme="dark"] button[kind="segmented_control"]:hover,
+  [data-theme="dark"] button[kind="segmented_control"]:hover * {
+    background: rgba(255,255,255,.07) !important; color: #f0f6fc !important;
+  }
+  [data-theme="dark"] button[kind="segmented_control"]:hover { border-color: #30363d !important; }
+  [data-theme="dark"] button[kind="segmented_controlActive"],
+  [data-theme="dark"] button[kind="segmented_controlActive"] * {
+    background: rgba(224,123,84,.20) !important; color: #ffd7c2 !important;
+  }
+  [data-theme="dark"] button[kind="segmented_controlActive"] {
+    border-color: rgba(224,123,84,.5) !important;
+  }
+
+  /* Tags do multiselect (anos, municípios): a regra clara pinta o texto de
+     azul-escuro com !important — sobre o fundo escuro dá contraste 2,6 e o
+     rótulo some, sobrando só o "×". */
+  [data-theme="dark"] [data-testid="stMultiSelect"] span[data-baseweb="tag"] {
+    background-color: rgba(88,166,255,.20) !important;
+    border-color: rgba(88,166,255,.45) !important;
+  }
+  [data-theme="dark"] [data-testid="stMultiSelect"] span[data-baseweb="tag"],
+  [data-theme="dark"] [data-testid="stMultiSelect"] span[data-baseweb="tag"] * {
+    color: #d9e8ff !important;
+  }
+
+  /* Valor exibido no selectbox: ficava #24292f sobre #21262d (contraste 1,04),
+     ou seja, a caixa parecia vazia. */
+  [data-theme="dark"] [data-baseweb="select"] > div,
+  [data-theme="dark"] [data-baseweb="select"] > div * {
+    color: #e6edf3 !important;
+  }
+  [data-theme="dark"] [data-baseweb="select"] svg { fill: #8b949e !important; }
+
+  /* Botões secundários (os três níveis do mapa): o rótulo é um <p> interno,
+     então colorir só o <button> deixava o texto escuro. */
+  [data-theme="dark"] [data-testid="stButton"] button[kind="secondary"],
+  [data-theme="dark"] [data-testid="stButton"] button[kind="secondary"] * {
+    background-color: #21262d !important; border-color: #30363d !important;
+    color: #e6edf3 !important;
+  }
+  [data-theme="dark"] [data-testid="stButton"] button[kind="secondary"]:hover,
+  [data-theme="dark"] [data-testid="stButton"] button[kind="secondary"]:hover * {
+    background-color: #30363d !important; border-color: #8b949e !important;
+    color: #ffffff !important;
+  }
+  [data-theme="dark"] [data-testid="stButton"] button[kind="primary"] * { color: #ffffff !important; }
+
+  [data-theme="dark"] [data-testid="stPills"] button,
+  [data-theme="dark"] [data-testid="stPills"] button * { color: #c9d1d9 !important; }
+  [data-theme="dark"] [data-testid="stPills"] button[aria-checked="true"],
+  [data-theme="dark"] [data-testid="stPills"] button[aria-checked="true"] * {
+    background-color: rgba(88,166,255,.18) !important;
+    border-color: rgba(88,166,255,.45) !important; color: #cfe6ff !important;
+  }
   [data-theme="dark"] [data-testid="stExpander"] { background: #161b22 !important; border-color: #30363d !important; }
   [data-theme="dark"] [data-testid="stButton"] button { background-color: #21262d !important; border-color: #30363d !important; color: #e6edf3 !important; }
   [data-theme="dark"] [data-testid="stButton"] button[kind="primary"] { background-color: #2B7BB9 !important; border-color: #2B7BB9 !important; color: #fff !important; }

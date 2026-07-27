@@ -10,10 +10,10 @@ services:
     volumes:
       - ./dados_dashboard:/app/dados_dashboard:ro
     environment:
-      # Endereço público do dashboard de PE no Superset, usado pela aba
-      # Análise Livre. O iframe só funciona com FRAME_ANCESTORS liberado no
-      # superset_config.py; sem isso, o botão "abrir em nova aba" cobre o caso.
-      - SUPERSET_URL=https://painel.cenarios.unb.br/cenarios/superset/superset/dashboard/tuberculose-pernambuco/?standalone=1
+      # RAIZ da aplicação Superset, não um dashboard específico: a Análise Livre
+      # entrega o Superset inteiro (SQL Lab, criação de gráficos, datasets) para
+      # quem quiser explorar por conta própria.
+      - SUPERSET_URL=https://painel.cenarios.unb.br/cenarios/superset/
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/cenarios/tbpe/_stcore/health')"]
       interval: 30s
