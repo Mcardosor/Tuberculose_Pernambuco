@@ -786,6 +786,9 @@ def secao_analise_livre() -> None:
 <div id="area" style="font-family:Inter,system-ui,sans-serif"></div>
 <script>
 const RAIZ = %s;
+// Endpoint que já inicia o OAuth: o popup vai DIRETO para o github.com, sem
+// passar pela tela de login do Superset. Um clique a menos.
+const LOGIN = RAIZ + 'login/github';
 const area = document.getElementById('area');
 let vigia = null, popup = null;
 
@@ -810,25 +813,25 @@ function convite(estado) {
         Entre para usar o Superset aqui dentro</p>
       <p style="color:#57606a;font-size:.87rem;margin:0 0 1.1rem;max-width:48ch;
                 display:inline-block">
-        Abre uma janelinha de login do GitHub. Assim que você entrar, ela fecha
-        sozinha e o Superset carrega nesta mesma tela.</p><br>
-      <button id="entrar" style="background:#2B7BB9;color:#fff;border:0;
+        Abre uma janelinha do GitHub. Assim que você entrar, ela fecha sozinha e
+        o Superset carrega aqui mesmo, sem sair desta aba.</p><br>
+      <button id="entrar" style="background:#24292f;color:#fff;border:0;
               padding:11px 22px;border-radius:8px;font-weight:700;
-              font-size:.92rem;cursor:pointer">🔓 Entrar no Superset</button>
+              font-size:.92rem;cursor:pointer">Entrar com GitHub</button>
       <p id="estado" style="color:#8b949e;font-size:.75rem;margin-top:1rem">${estado || ''}</p>
     </div>`;
 
   document.getElementById('entrar').onclick = () => {
     const est = document.getElementById('estado');
-    popup = window.open(RAIZ, 'login_superset',
-                        'width=1000,height=780,menubar=no,toolbar=no');
+    popup = window.open(LOGIN, 'login_superset',
+                        'width=980,height=760,menubar=no,toolbar=no');
     if (!popup) {   // navegador bloqueou o popup
       est.innerHTML = `Seu navegador bloqueou a janela.
-        <a href="${RAIZ}" target="_blank" rel="noopener">Abrir em outra aba</a>
+        <a href="${LOGIN}" target="_blank" rel="noopener">Abrir em outra aba</a>
         e voltar aqui também funciona.`;
       return;
     }
-    est.textContent = 'Aguardando o login na janela…';
+    est.textContent = 'Aguardando o login na janelinha…';
     // observa até a sessão aparecer; para sozinho se a janela for fechada
     vigia = setInterval(async () => {
       if (await temSessao()) return embutir();
