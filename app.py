@@ -390,7 +390,9 @@ def secao_mapa(f: Filtros) -> None:
                 graficos.bar_h(
                     [{"label": d["nome"], "valor": d[metrica]} for d in top[:limite]],
                     altura=altura,
-                    cor="#e8871e" if metrica != "cura_pct" else COR_CURA,
+                    # mesma rampa do mapa ao lado, em degradê pela posição
+                    cores=mapas.cores_ranking(
+                        [d[metrica] for d in top[:limite]], metrica),
                     # com denominador ao lado do número, dá para julgar o peso
                     texto=[f"{fmt_metrica(d[metrica])}{sufixo}"
                            + (f"  (n={fmt_int(d[campo_den])})" if campo_den else "")
@@ -464,7 +466,11 @@ def _drill_down(f: Filtros, nivel: str, unidade: str) -> None:
         st.plotly_chart(
             graficos.bar_h([{"label": x["nome"], "valor": x["casos"]}
                             for x in d["filhos"][:15]],
-                           altura=max(280, min(len(d["filhos"]), 15) * 30)),
+                           altura=max(280, min(len(d["filhos"]), 15) * 30),
+                           # mesmo degradê do ranking do mapa: é a mesma
+                           # métrica (casos) na mesma forma (ranking)
+                           cores=mapas.cores_ranking(
+                               [x["casos"] for x in d["filhos"][:15]], "casos")),
             width="stretch", config=PLOTLY_CFG, key=f"drill_bar_{unidade}",
         )
     with c2:

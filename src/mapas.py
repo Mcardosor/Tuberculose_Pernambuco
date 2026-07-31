@@ -78,6 +78,100 @@ def tem_base(unidade: dict, metrica: str) -> bool:
 def usa_quantis(metrica: str) -> bool:
     return bool(METRICAS.get(metrica, {}).get("quantis"))
 
+
+# ── Cores do ranking ──────────────────────────────────────────────────────────
+#
+# O ranking fica ao lado do mapa mostrando a MESMA métrica, então usa a mesma
+# rampa: um município escuro no mapa é escuro na lista. Antes o mapa de casos
+# era azul e as barras ao lado, laranja — duas linguagens de cor para o mesmo
+# número.
+#
+# O primeiro passo das rampas (#eaf4fc, #fff7ec, …) é quase branco. Isso é certo
+# num mapa, onde a cor preenche uma área grande com contorno, e errado numa
+# barra fina sobre cartão branco, que sumiria.
+#
+# Daí o piso: o ranking usa só a parte da rampa que alcança 3:1 contra o fundo,
+# o mínimo da WCAG 1.4.11 para objeto gráfico. O piso é CALCULADO por rampa, não
+# fixo — as quatro têm luminosidades bem diferentes, e um piso único que serve
+# para a azul deixa a amarela em 1,5:1.
+_FUNDO_GRAFICO = "#ffffff"
+_CONTRASTE_MINIMO = 3.0
+
+
+def _luminancia(cor: str) -> float:
+    h = cor.lstrip("#")
+    canais = []
+    for k in (0, 2, 4):
+        c = int(h[k:k + 2], 16) / 255
+        canais.append(c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * canais[0] + 0.7152 * canais[1] + 0.0722 * canais[2]
+
+
+def _contraste(a: str, b: str) -> float:
+    l1, l2 = sorted((_luminancia(a), _luminancia(b)), reverse=True)
+    return (l1 + 0.05) / (l2 + 0.05)
+
+
+def _interpola(escala: list[str], t: float) -> str:
+    """Cor em t ∈ [0,1] ao longo dos passos da rampa (interpolação em sRGB)."""
+    t = min(max(t, 0.0), 1.0)
+    n = len(escala) - 1
+    pos = t * n
+    i = min(int(pos), n - 1)
+    f = pos - i
+    a, b = escala[i].lstrip("#"), escala[i + 1].lstrip("#")
+    canais = tuple(
+        round(int(a[k:k + 2], 16) + f * (int(b[k:k + 2], 16) - int(a[k:k + 2], 16)))
+        for k in (0, 2, 4)
+    )
+    return "#%02x%02x%02x" % canais
+
+
+@lru_cache(maxsize=8)
+def _piso_visivel(escala: tuple[str, ...]) -> float:
+    """Menor t da rampa cuja cor ainda alcança _CONTRASTE_MINIMO contra o fundo.
+
+    Busca binária em vez de constante na mão: se alguém trocar uma rampa em
+    constantes.py, o piso se ajusta sozinho e o ranking não fica ilegível sem
+    ninguém perceber.
+    """
+    lista = list(escala)
+    if _contraste(_interpola(lista, 0.0), _FUNDO_GRAFICO) >= _CONTRASTE_MINIMO:
+        return 0.0
+    lo, hi = 0.0, 1.0
+    for _ in range(24):  # ~1e-7 de precisão, muito além do necessário
+        meio = (lo + hi) / 2
+        if _contraste(_interpola(lista, meio), _FUNDO_GRAFICO) >= _CONTRASTE_MINIMO:
+            hi = meio
+        else:
+            lo = meio
+    return hi
+
+
+def cores_ranking(valores: list[float], metrica: str) -> list[str]:
+    """Uma cor por barra, na mesma rampa do mapa. Recebe e devolve em ordem
+    DECRESCENTE — o primeiro da lista é o maior, e leva o tom mais escuro.
+
+    A posição na rampa vem da ORDEM na lista exibida, não do valor bruto. Com
+    valor bruto o degradê não apareceria: Recife tem 49.185 casos e o 12º da
+    lista tem 2.126, então tudo abaixo do primeiro colapsaria na cor mais clara
+    — o mesmo problema de assimetria que `_escala_quantis` resolve no mapa.
+
+    Nada é distorcido por isso: o COMPRIMENTO da barra continua sendo o valor
+    real, que é o que se lê num ranking. A cor só reforça a ordem que a lista
+    já tem, e o número exato está escrito ao lado de cada barra.
+    """
+    escala = METRICAS.get(metrica, {}).get("escala") or SEQ_CASOS
+    piso = _piso_visivel(tuple(escala))
+    n = len(valores)
+    if n == 1:
+        return [_interpola(escala, 1.0)]
+    return [
+        _interpola(escala, 1 - (1 - piso) * (i / (n - 1)))
+        for i in range(n)
+    ]
+
+
 @lru_cache(maxsize=3)
 def geojson(nivel: str) -> dict:
     """GeoJSON do nível, carregado uma vez por processo."""
