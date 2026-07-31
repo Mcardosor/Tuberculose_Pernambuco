@@ -21,7 +21,6 @@ import os
 from urllib.parse import urljoin
 
 import streamlit as st
-import streamlit.components.v1 as components
 
 from src import banco, graficos, indicadores, mapas, precomputado, styles
 from src.constantes import (
@@ -781,7 +780,7 @@ def secao_analise_livre() -> None:
     # conteúdo pelo Superset embutido. A pessoa nunca sai da Análise Livre e
     # nunca vê um formulário do GitHub dentro de um quadro.
     raiz_js = json.dumps(raiz)  # escapa aspas e barras com segurança
-    components.html(
+    st.iframe(
         """
 <div id="area" style="font-family:Inter,system-ui,sans-serif"></div>
 <script>

@@ -10,7 +10,6 @@ Plotly, então o que precisa de tratamento no dark mode são os SVGs do Plotly.
 """
 
 import streamlit as st
-import streamlit.components.v1 as components
 
 _CSS = """
 <style>
@@ -461,8 +460,8 @@ _THEME_TOGGLE_JS = """
 def inject_css() -> None:
     st.markdown(_CSS, unsafe_allow_html=True)
     dark = _DARK_CSS.replace("\n", " ").replace("'", "\\'").replace('"', '\\"')
-    components.html(_THEME_TOGGLE_JS.replace("DARK_CSS_PLACEHOLDER", f"'{dark}'"),
-                    height=1, scrolling=False)
+    st.iframe(_THEME_TOGGLE_JS.replace("DARK_CSS_PLACEHOLDER", f"'{dark}'"),
+              height=1)
 
 
 def navbar(titulo: str = "Dashboard TB | Pernambuco") -> None:
