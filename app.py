@@ -18,7 +18,6 @@ from __future__ import annotations
 import html
 import json
 import os
-from urllib.parse import urljoin
 
 import streamlit as st
 
@@ -77,16 +76,6 @@ ANOS_COMPLETOS = [a for a in ANOS if a != ANO_PARCIAL] or ANOS
 # é justamente o parâmetro que remove a navegação do Superset e entrega só um
 # painel fechado, que é o que este painel já faz nas outras seções.
 SUPERSET_URL = os.getenv("SUPERSET_URL", "http://localhost:8590/")
-
-# Atalhos para as áreas que interessam a quem vai explorar. São caminhos
-# relativos à raiz acima, montados com urljoin para funcionar tanto em
-# localhost quanto atrás do /cenarios/superset/ em produção.
-SUPERSET_ATALHOS = [
-    ("📊 Gráficos", "chart/list/"),
-    ("🗂️ Dashboards", "dashboard/list/"),
-    ("🧮 SQL Lab", "sqllab/"),
-    ("🗃️ Conjuntos de dados", "tablemodelview/list/"),
-]
 
 _MS = dict(label_visibility="collapsed", placeholder="Todos")
 
@@ -761,11 +750,14 @@ def secao_analise_livre() -> None:
     if not raiz.endswith("/"):
         raiz += "/"
 
-    # ── Atalhos para quem prefere trabalhar numa aba dedicada ─────────────────
-    colunas = st.columns(len(SUPERSET_ATALHOS) + 1)
-    colunas[0].link_button("↗ Abrir em outra aba", raiz, width="stretch")
-    for col, (rotulo, caminho) in zip(colunas[1:], SUPERSET_ATALHOS):
-        col.link_button(rotulo, urljoin(raiz, caminho), width="stretch")
+    # ── Para quem prefere trabalhar numa aba dedicada ─────────────────────────
+    #
+    # Só a raiz. Atalhos para Gráficos/Dashboards/SQL Lab/Conjuntos de dados
+    # existiram aqui e foram removidos: o Superset embutido logo abaixo já vem
+    # com a navegação dele completa, então eram um segundo menu para os mesmos
+    # destinos. Pior, apareciam antes do login e levavam a pessoa para fora da
+    # aba — justamente o que o fluxo de popup abaixo existe para evitar.
+    st.link_button("↗ Abrir em outra aba", raiz)
 
     # ── O Superset, aqui dentro ───────────────────────────────────────────────
     #
