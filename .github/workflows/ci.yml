@@ -33,6 +33,11 @@ jobs:
       - name: Instala as versões que estão no ar
         run: pip install -r requirements-dev.txt
 
+      # Antes do pytest: o ruff pega nome indefinido e import quebrado em
+      # segundos, inclusive nos 55 testes que aqui vão pular por falta de dado.
+      - name: Ruff
+        run: ruff check .
+
       - name: Testes
         run: python -m pytest
 

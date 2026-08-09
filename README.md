@@ -172,8 +172,21 @@ na `main`, em dois jobs:
 
 | Job | O que garante |
 |---|---|
-| `testes` | os 33 testes sem microdado, no Python 3.11 e nas versões do lock |
+| `testes` | `ruff check` + os 33 testes sem microdado, no Python 3.11 e nas versões do lock |
 | `imagem` | a imagem constrói, e o que ela instala bate linha a linha com o lock |
+
+O `ruff.toml` liga só regras que pegam bug (`E4`, `E7`, `E9`, `F`, `B`) e
+documenta o porquê de cada exclusão. Duas valem menção, porque a decisão não
+é óbvia: **`B905`** (`zip()` sem `strict=`) fica desligada porque em `app.py`
+o zip entre 4 colunas e 3 níveis é desigual de propósito — `strict=True` ali
+derrubaria o seletor do mapa; e **`I`** (ordem de imports) foi testada e
+descartada, porque o isort do ruff não tem modo compacto e reescrevia 55
+linhas sem corrigir nada.
+
+```bash
+ruff check .          # o que o CI roda
+ruff check . --fix    # aplica o que for seguro
+```
 
 **O CI não substitui rodar a suíte antes do deploy.** Ele não tem o microdado,
 então os invariantes epidemiológicos — a parte que realmente protege os

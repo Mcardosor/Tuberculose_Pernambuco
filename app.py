@@ -15,7 +15,6 @@ Rodar local:  python -m streamlit run app.py   →  http://localhost:8501
 
 from __future__ import annotations
 
-import html
 import json
 import os
 

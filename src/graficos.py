@@ -44,7 +44,7 @@ def donut(contagens: list[dict], altura: int = H_SMALL,
 
     fig = go.Figure(go.Pie(
         labels=labels, values=valores, hole=0.62,
-        marker=dict(colors=[cores[l] for l in labels],
+        marker=dict(colors=[cores[rotulo] for rotulo in labels],
                     line=dict(color="#ffffff", width=2)),
         textinfo="percent", textfont=dict(size=11.5),
         customdata=[fmt_int(v) for v in valores],
@@ -97,7 +97,7 @@ def bar_v(contagens: list[dict], altura: int = H_SMALL) -> go.Figure:
     cores = tb_color_map(labels)
     fig = go.Figure(go.Bar(
         x=labels, y=[d["valor"] for d in contagens],
-        marker=dict(color=[cores[l] for l in labels], cornerradius=6),
+        marker=dict(color=[cores[rotulo] for rotulo in labels], cornerradius=6),
         text=[fmt_int(d["valor"]) for d in contagens], textposition="outside",
         textfont=dict(size=11, color="#57606a"), cliponaxis=False,
         hovertemplate="<b>%{x}</b><br>%{text} casos<extra></extra>",
@@ -164,7 +164,7 @@ def barras_desfecho(coorte: list[dict], altura: int = H_MEDIUM) -> go.Figure:
     cores = tb_color_map(labels)
     fig = go.Figure(go.Bar(
         x=labels, y=[d["valor"] for d in coorte],
-        marker=dict(color=[cores[l] for l in labels], cornerradius=6),
+        marker=dict(color=[cores[rotulo] for rotulo in labels], cornerradius=6),
         text=[f"{fmt_dec(d['pct'])}%" for d in coorte],
         textposition="outside", textfont=dict(size=11, color="#57606a"),
         cliponaxis=False,

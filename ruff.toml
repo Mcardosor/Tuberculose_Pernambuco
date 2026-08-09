@@ -1,0 +1,46 @@
+# Ruff — só as regras que pegam bug. Estilo fica por conta de quem escreve.
+#
+# O critério para incluir uma regra aqui foi: ela apontaria algo que a gente
+# ia querer consertar? Rodando o conjunto amplo do ruff neste código, a
+# resposta foi "não" na esmagadora maioria — o que ele chamava de problema
+# era decisão deliberada, documentada em comentário ou coberta por teste.
+# Ligar tudo treinaria a equipe a ignorar o linter, que é o pior resultado.
+
+target-version = "py311"
+
+[lint]
+select = [
+    "E4",  # imports mal colocados
+    "E7",  # comparações e nomes problemáticos
+    "E9",  # erro de sintaxe / falha de parse
+    "F",   # pyflakes: nome indefinido, import não usado, f-string sem campo
+    "B",   # flake8-bugbear: armadilhas reais de runtime
+]
+
+# "I" (ordem dos imports) foi testada e removida. O isort do ruff só sabe
+# quebrar import longo em uma linha por nome; este projeto escreve na forma
+# compacta (`ANO_FIM, ANO_INICIO, COR_ABANDONO,` numa linha só). Ligar a regra
+# reescrevia 55 linhas em 9 arquivos sem corrigir nada — e `split-on-trailing-
+# comma = false` não evita, porque não existe modo compacto no ruff. Os imports
+# do projeto já estão agrupados de forma legível; a regra custava mais do que
+# entregava.
+
+ignore = [
+    # B905 (`zip()` sem `strict=`) — desligada de propósito. Em `app.py` o zip
+    # é entre 4 colunas e 3 níveis geográficos: a quarta é espaçador, e a
+    # diferença de tamanho é o comportamento desejado. `strict=True` ali
+    # derrubaria o seletor de nível do mapa. Como das 3 ocorrências uma é
+    # deliberadamente desigual e as outras duas são iguais por construção
+    # (`zip(st.columns(len(cards)), cards)`), a regra só produz ruído.
+    "B905",
+]
+
+# E501 (linha longa) não entra: `styles.py` tem blocos de CSS e `indicadores.py`
+# tem SQL que passam de 120 colunas por natureza. Seriam 115 avisos, zero bugs.
+# A mediana do projeto é 40 colunas — o código já é legível sem a regra.
+
+
+[lint.per-file-ignores]
+# `sys.path` precisa ser ajustado antes dos imports do projeto; os imports
+# depois disso não são "fora de ordem", são consequência disso.
+"tests/conftest.py" = ["E402"]

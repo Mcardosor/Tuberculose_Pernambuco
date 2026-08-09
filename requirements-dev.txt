@@ -4,3 +4,4 @@
 # versões diferentes das que estão no ar responde a pergunta errada.
 -r requirements.lock.txt
 pytest==8.4.2
+ruff==0.16.2
