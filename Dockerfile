@@ -2,9 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Dependências Python primeiro, para aproveitar cache de layer
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Dependências Python primeiro, para aproveitar cache de layer.
+# Instala do lock (versões exatas), não do requirements.txt (faixas) — sem
+# isso, dois builds do mesmo commit podem subir versões diferentes.
+COPY requirements.lock.txt .
+RUN pip install --no-cache-dir -r requirements.lock.txt
 
 COPY app.py .
 COPY src/ src/

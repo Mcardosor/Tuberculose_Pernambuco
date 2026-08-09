@@ -160,9 +160,51 @@ Rode depois do ETL e antes de todo deploy — `test_precomputo.py` acusa se
 ## Como rodar
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.lock.txt
 python -m streamlit run app.py
 ```
+
+## Dependências
+
+Dois arquivos, com papéis diferentes:
+
+| Arquivo | Papel |
+|---|---|
+| `requirements.txt` | **Intenção** — faixas de versão que o código suporta |
+| `requirements.lock.txt` | **Realidade** — versões exatas; é daqui que o Dockerfile instala |
+
+Antes de existir o lock, o `requirements.txt` só tinha pisos (`pandas>=2.2`,
+`plotly>=5.24`), então a resolução acompanhava o PyPI: dois builds do mesmo
+commit podiam subir versões diferentes. Foi o que aconteceu — a produção
+atravessou sozinha as viradas para **pandas 3** e **plotly 6**, sem que isso
+fosse decidido nem registrado em lugar nenhum.
+
+O lock foi capturado do container em execução na VM, e não resolvido do zero,
+justamente para que travar as versões não mudasse nada em produção. Os tetos
+de major existem para que a próxima virada seja uma decisão, não um efeito
+colateral de rebuildar.
+
+Para regenerar o lock — depois de mudar uma faixa no `requirements.txt`:
+
+```bash
+docker run --rm -v "$PWD:/w" -w /w python:3.11-slim \
+  sh -c "pip install -q -r requirements.txt && pip freeze" > requirements.lock.txt
+```
+
+Resolva **dentro do `python:3.11-slim`**, nunca no Python do seu computador:
+a resolução muda conforme a versão do interpretador, e o que vale é a da
+imagem. Depois de regenerar, rode a suíte antes de commitar — os testes são
+o que separa "atualizei as dependências" de "atualizei e continua correto".
+
+### Ao subir de major
+
+Os 88 testes rodam contra a **camada de dados** — não cobrem renderização.
+Eles passam tanto no par pandas 2.3 / plotly 5.24 quanto no pandas 3.0 /
+plotly 6.9, então servem de rede para as agregações, mas não dizem nada sobre
+o mapa. Depois de subir um teto, confira no navegador os coropléticos dos três
+níveis: o enquadramento depende de comportamento específico da versão do
+Plotly (ver a nota sobre `geo.fitbounds` na seção dos GeoJSONs), e uma
+regressão ali não aparece no pytest.
 
 ### Superset na Análise Livre
 

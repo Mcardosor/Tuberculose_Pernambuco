@@ -1,5 +1,14 @@
-streamlit>=1.44
-duckdb>=1.1
-pandas>=2.2
-plotly>=5.24
-pyarrow>=17.0
+# Intenção: faixas de versão que o código suporta.
+# O que é instalado de fato está em requirements.lock.txt — é de lá que o
+# Dockerfile instala. Mexa aqui só para mudar a faixa suportada; depois
+# regenere o lock (ver README, seção Dependências).
+#
+# Os pisos batem com o que roda em produção hoje; os tetos de major existem
+# para que um build futuro não atravesse uma virada de major sem ninguém
+# decidir por isso. Antes destes tetos, os pisos eram pandas>=2.2 e
+# plotly>=5.24 — faixas que não descreviam mais a realidade.
+streamlit>=1.60,<2
+duckdb>=1.5,<2
+pandas>=3.0,<4
+plotly>=6.9,<7
+pyarrow>=24,<25
