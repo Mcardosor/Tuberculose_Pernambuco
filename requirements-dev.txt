@@ -1,2 +1,6 @@
--r requirements.txt
-pytest>=8.0
+# Ambiente de desenvolvimento = produção + ferramentas de teste.
+#
+# Aponta para o lock, não para o requirements.txt: rodar a suíte contra
+# versões diferentes das que estão no ar responde a pergunta errada.
+-r requirements.lock.txt
+pytest==8.4.2

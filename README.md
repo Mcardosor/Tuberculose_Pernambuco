@@ -145,7 +145,7 @@ executa só a seção ativa.
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest                 # 84 casos, ~20 s
+python -m pytest                 # 88 casos, ~40 s
 python -m pytest -m "not lento"  # ~5 s
 ```
 
@@ -156,6 +156,30 @@ cálculo ao vivo, e regressões pontuais. Detalhes em [tests/README.md](tests/RE
 
 Rode depois do ETL e antes de todo deploy — `test_precomputo.py` acusa se
 `_agregados.json` estiver desatualizado.
+
+### Sem o microdado
+
+Num clone limpo, `pe_tb_sinan.parquet` não existe — ele nunca entra no
+repositório. Nesse caso os 55 testes que tocam a base **pulam** com a
+mensagem de que falta rodar o ETL, e os 33 de lógica pura rodam normalmente.
+O porteiro está em `tests/conftest.py`; sem ele, o mesmo cenário produzia 40
+erros de `IOException` do DuckDB, que parecem suíte quebrada e não são.
+
+### O que o CI cobre
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) roda a cada push e PR
+na `main`, em dois jobs:
+
+| Job | O que garante |
+|---|---|
+| `testes` | os 33 testes sem microdado, no Python 3.11 e nas versões do lock |
+| `imagem` | a imagem constrói, e o que ela instala bate linha a linha com o lock |
+
+**O CI não substitui rodar a suíte antes do deploy.** Ele não tem o microdado,
+então os invariantes epidemiológicos — a parte que realmente protege os
+números do painel — só são exercitados na sua máquina. O que o CI pega é a
+outra classe de problema: import quebrado, regressão de formatador, lock que
+parou de instalar, Dockerfile que não constrói.
 
 ## Como rodar
 
