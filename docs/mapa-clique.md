@@ -86,12 +86,45 @@ região → município) é seca, e queremos uma transição que os olhos acompan
   branco a cada rerun, virou piscada em toda interação, não só na navegação.
   Removido em 24/ago/2026 (`src/theme/componentes.py`, "O mapa não anima").
 
-**O caminho que resta:** um componente próprio (`st.components.v1.html` com
-deck.gl por CDN, ou um componente bidirecional) que **mantenha a instância do
-deck viva** entre reruns e receba só o novo `viewState` e os novos dados. Aí
-`flyTo` e a transição de cor dos polígonos (`transitions` do `GeoJsonLayer`)
-funcionam de verdade. O clique volta pelo componente, não pelo `on_select`
-do `st.pydeck_chart`. Custo estimado: um a dois dias, mais JS para a equipe
-manter; e o `script_travar_zoom` deixa de ser necessário, porque o controle
-passa a ser nosso. Testar aqui primeiro e portar para hansepe e RecifeTB —
-os três têm o mesmo `mapa.py`.
+**Feito em 21/set/2026 — `src/mapa_componente.py` + `src/componente_mapa/`.**
+Um componente estático do Streamlit (`declare_component(path=...)`), sem
+build nem npm: `index.html` carrega o bundle do deck.gl 9.3 e o módulo
+`@deck.gl/json` (vendorados, porque a rede daqui bloqueia CDN e o painel
+não pode depender disso), e `mapa.js` fala o protocolo de componente na mão
+(`componentReady`, `setFrameHeight`, `setComponentValue`, escuta de
+`streamlit:render`).
+
+Como funciona:
+
+- A `key` do componente é **estável** (`"mapa"`), então o iframe — e a
+  instância do Deck dentro dele — sobrevive aos reruns. Cada render só chama
+  `setProps`.
+- O spec que chega é o mesmo JSON do pydeck (`Deck.to_json()`), convertido
+  pelo `JSONConverter` do deck.gl — o `mapa.py` não mudou de linguagem.
+- A camada de geografia ganhou `id="geografia"` e
+  `transitions={"getFillColor": 450}`: trocar métrica, ano ou classificação
+  **interpola a cor** dos polígonos em vez de trocar de vez.
+- Quando o enquadramento pedido muda (macro, região, município, voltar), a
+  câmera voa com `FlyToInterpolator` por 700 ms. O voo começa num
+  `requestIdleCallback` (teto 350 ms), porque o `streamlit:render` chega no
+  pico do redesenho da página e o laço de animação não ganha frame ali.
+  Trocar de métrica não move a câmera, e quem arrastou não é puxado de volta.
+- O clique volta como `{nonce, properties}`. O nonce muda a cada clique,
+  inclusive no mesmo polígono, e `app.py` guarda o último tratado em
+  `session_state` — é o que resolve o laço de rerun e o clique repetido que
+  abre o detalhe, os dois problemas que a chave estável tinha no
+  `st.pydeck_chart`.
+- Roda do mouse desligada no `controller` (não mais pelo DOM, o
+  `script_travar_zoom` ficou sem uso aqui); zoom pelos botões +/− do próprio
+  componente, com transição de 300 ms.
+
+**Medição:** no navegador embutido do app o `requestAnimationFrame` roda a
+1 quadro/s (janela oculta), então o voo parece salto ali — falso negativo,
+como todo teste de navegador nesta rede. Com frames de verdade a transição
+foi observada em passos intermediários de zoom (5,91 → 6,57 → 6,69 → 6,85 →
+6,91). Confira num navegador comum.
+
+Para portar ao hansepe e ao RecifeTB: copiar `src/componente_mapa/` e
+`src/mapa_componente.py`, dar `id` e `transitions` à camada em `mapa.py`, e
+trocar o bloco do `st.pydeck_chart` no `app.py` pelo `desenhar` +
+`alvo_do_clique` com nonce.

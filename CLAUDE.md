@@ -62,7 +62,8 @@ PE) → `src/data/*` → `src/mapa.py` e `src/graficos.py`.
 - **`src/doencas/tuberculose.py`** — o pack: 6 KPIs, `CORTES_FIXOS`
   ancorados em Brasil (40) e PE (55) por 100 mil e na meta de cura de 85 %,
   `NOMES_FIXOS` para a legenda, 22 variáveis curadas, 10 em destaque.
-- **`src/mapa.py`** — pydeck; `QUARTIL` são **quintis** (`QUANTIS = 5`);
+- **`src/mapa.py`** — pydeck (o spec vai ao componente próprio); camada
+  `geografia` com `transitions`; `QUARTIL` são **quintis** (`QUANTIS = 5`);
   `alvo_do_clique` lê `cod_mun6`, `regiao`, `uf`. A escala fixa abre a
   última classe: com 4 macros e máximo 74, a legenda mostra "≥ 55", não
   "≥ 110" — a classe do dobro de PE só aparece quando há valor nela.
@@ -74,12 +75,14 @@ PE) → `src/data/*` → `src/mapa.py` e `src/graficos.py`.
 
 - **Módulos importados não recarregam** no Streamlit: editou `src/`,
   reinicie o servidor.
-- **O mapa não anima a transição.** `FlyToInterpolator` e fade CSS já foram
-  tentados e removidos (`src/theme/componentes.py`, bloco "O mapa não
-  anima"): o Streamlit recria o canvas do deck a cada rerun, então o fade
-  vira piscada e a câmera não tem de onde partir. Transição de verdade exige
-  um componente próprio que mantenha a instância do deck viva —
-  `docs/mapa-clique.md`, "Transição".
+- **O mapa é componente próprio** (`src/mapa_componente.py` +
+  `src/componente_mapa/`), não `st.pydeck_chart`: é o que mantém o deck vivo
+  entre reruns e dá a transição (voo da câmera + interpolação de cor). A
+  `key` é estável de propósito; o clique volta com nonce e `app.py` guarda o
+  último em `session_state`. Bundles do deck.gl 9.3 vendorados (CDN
+  bloqueado na rede). Detalhes e medição: `docs/mapa-clique.md`.
+- **Animação não se mede no navegador embutido do app**: ele roda a 1
+  frame/s quando a janela está oculta e o voo vira salto. Falso negativo.
 - **`interrupcao_trat_pct` e `hiv_pos_pct` não pintam o mapa**: vêm do
   `sinan_landing`, uma geografia por vez.
 - **O SIM para em 2024**: `obitos_sim` e `componentes_municipais` toleram a
