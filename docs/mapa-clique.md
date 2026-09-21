@@ -138,5 +138,8 @@ instância viva (`src/componente_grafico/`) e só chama `setOption` — o
 ECharts interpola o que mudou. Feitos: **ranking** (barras deslizam para o
 valor e a posição novos; cor por classe do mapa; clique destaca/entra, com
 nonce) e **tópicos de interesse** (uma instância por variável, `key` com o
-código; ao clicar no mapa as dez trocam juntas, barra a barra). A fazer:
-canal endêmico e epicurva, pirâmide.
+código; ao clicar no mapa as dez trocam juntas, barra a barra), **canal
+endêmico** (faixa por duas séries empilhadas, como no painel de origem; a
+linha do ano e a faixa deslizam ao mudar o recorte), **série anual** e
+**epicurva** (eixo de tempo; o trecho do ano em foco é uma série por cima).
+A fazer: pirâmide.

@@ -487,11 +487,8 @@ with direita:
 
             if horizonte == "Meses do ano":
                 canal_atual = _canal(nav.ano, nav.nivel, nav.mun, nav.macro, nav.micro)
-                figura = graficos.canal_endemico(
-                    canal_atual,
-                    rotulo=pack.rotulo("incid"),
-                    cor=pack.cor("incid"),
-                    altura=ALTURA_LINHA_1 - 200,
+                figura = grafico_componente.canal_endemico(
+                    canal_atual, rotulo=pack.rotulo("incid"), cor=pack.cor("incid"),
                 )
                 titulo_serie = "Canal endêmico"
                 rodape = ""
@@ -506,22 +503,27 @@ with direita:
                         rodape += f" Em {nav.ano}, **{acima} de 12 meses** ficaram acima do topo da faixa."
             else:
                 serie = _serie_anual(nav.nivel, nav.mun, nav.macro, nav.micro, "incid")
-                figura = graficos.evolucao_anual(
-                    serie, rotulo=pack.rotulo("incid"), cor=pack.cor("incid"),
-                    altura=ALTURA_LINHA_1 - 200, ano=nav.ano,
+                figura = grafico_componente.evolucao_anual(
+                    serie, rotulo=pack.rotulo("incid"), cor=pack.cor("incid"), ano=nav.ano,
                 )
                 titulo_serie = "Incidência por ano"
                 rodape = ""
             st.markdown(ui.titulo_painel(titulo_serie, ajuda=rodape), unsafe_allow_html=True)
-            st.altair_chart(figura, width="stretch")
+            # ECharts vivo: a linha do ano e a faixa deslizam ao mudar o
+            # recorte. A `key` muda com o horizonte porque canal e barras
+            # anuais são gráficos diferentes — entre eles não há o que animar.
+            grafico_componente.desenhar(
+                figura, altura=ALTURA_LINHA_1 - 200,
+                key="canal" if horizonte == "Meses do ano" else "anual",
+            )
 
             st.markdown(ui.titulo_painel("Epicurva por mês"), unsafe_allow_html=True)
-            st.altair_chart(
-                graficos.epicurva(
+            grafico_componente.desenhar(
+                grafico_componente.epicurva(
                     _epicurva(nav.ano, nav.nivel, nav.mun, nav.macro, nav.micro),
                     rotulo="Casos", cor=pack.cor("casos"), ano_em_foco=nav.ano,
                 ),
-                width="stretch",
+                altura=220, key="epicurva",
             )
 
         with aba_ranking, resiliencia.painel("Ranking"):

@@ -64,7 +64,30 @@
     if (option.tooltip) {
       const rotulo = option.tooltip.rotuloValor;
       const casas = Number(option.tooltip.casas) || 0;
+      const ocultas = option.tooltip.ocultas || [];
+      const fmt = (x) => x === null || x === undefined || Number.isNaN(x) ? "—"
+        : Number(x).toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
+      const mes = (valorEixo) => {
+        // "2024-03-01" -> "mar/2024"
+        const d = new Date(valorEixo);
+        if (Number.isNaN(d.getTime())) return String(valorEixo);
+        return d.toLocaleDateString("pt-BR", { month: "short", year: "numeric", timeZone: "UTC" })
+          .replace(". de ", "/").replace(".", "");
+      };
       option.tooltip.formatter = (p) => {
+        if (Array.isArray(p) && option.tooltip.trigger === "axis") {
+          const linhas = p.filter((s) => !ocultas.includes(s.seriesName)).map((s) => {
+            const valor = Array.isArray(s.value) ? s.value[1] : s.value;
+            return s.marker + " " + s.seriesName + ": <b>" + fmt(valor) + "</b>";
+          });
+          let cabeca = "";
+          if (p[0]) {
+            cabeca = option.tooltip.mesNoEixo
+              ? mes(Array.isArray(p[0].value) ? p[0].value[0] : p[0].axisValue)
+              : p[0].axisValueLabel;
+          }
+          return "<b>" + cabeca + "</b><br/>" + linhas.join("<br/>");
+        }
         const v = Array.isArray(p) ? p[0] : p;
         if (v.data && typeof v.data === "object" && v.data.tooltip) return v.data.tooltip;
         const num = v.value === null || v.value === undefined ? "—"
@@ -75,6 +98,8 @@
     if (option.title && option.title.textStyle && !option.title.textStyle.color) {
       option.title.textStyle.color = corTexto;
     }
+    if (option.legend && option.legend.textStyle) option.legend.textStyle.color = corTexto;
+    if (option.yAxis && option.yAxis.nameTextStyle) option.yAxis.nameTextStyle.color = corTexto;
     if (option.yAxis && option.yAxis.axisLabel) {
       option.yAxis.axisLabel.color = corTexto;
     }

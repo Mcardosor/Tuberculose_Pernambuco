@@ -288,3 +288,238 @@ def composicao(
         }],
     })
     return opt
+
+
+# ---------------------------------------------------------------------------
+# Evolução temporal: canal endêmico, série anual e epicurva
+# ---------------------------------------------------------------------------
+
+#: Cores do canal, as mesmas do Altair (`graficos.py`): faixa azul-clara com
+#: borda cinza-azulada, anos de referência numa rampa fria do mais antigo ao
+#: mais recente, ano selecionado na cor da métrica.
+SERIE_ATUAL = "Ano selecionado"
+SERIE_Q1 = "Q1"
+SERIE_Q3 = "Q3"
+COR_FAIXA = "#CBDCEF"
+COR_BORDA_FAIXA = "#8FA9C4"
+RAMPA_REFERENCIA = ("#C3CBD4", "#A8B6C6", "#8C9FB8", "#6E88AA", "#4A78B0")
+
+#: Nomes das duas séries mudas que desenham a faixa (ver `canal_endemico`).
+_FAIXA_BASE = "\u200b"
+_FAIXA_ALTURA = "\u200b\u200b"
+
+
+def _eixo_valor(rotulo: str) -> dict:
+    return {
+        "type": "value",
+        "name": rotulo,
+        "nameLocation": "middle",
+        "nameGap": 40,
+        "nameTextStyle": {"fontSize": _FONTE_PX},
+        "axisLine": {"show": False},
+        "axisTick": {"show": False},
+        "splitLine": {"lineStyle": {"color": _COR_GRADE}},
+        "axisLabel": {"fontSize": _FONTE_PX},
+    }
+
+
+def _eixo_categoria(rotulos: list[str]) -> dict:
+    return {
+        "type": "category",
+        "data": rotulos,
+        "boundaryGap": False,
+        "axisLine": {"lineStyle": {"color": _COR_EIXO}},
+        "axisTick": {"lineStyle": {"color": _COR_EIXO}},
+        "axisLabel": {"fontSize": _FONTE_PX},
+    }
+
+
+def _valor(v) -> float | None:
+    return None if v is None or pd.isna(v) else float(v)
+
+
+def _recado(opt: dict, texto: str) -> dict:
+    opt["title"] = {
+        "text": texto,
+        "left": "center", "top": "middle",
+        "textStyle": {"fontSize": _FONTE_PX, "fontWeight": "normal"},
+    }
+    return opt
+
+
+def canal_endemico(canal, *, rotulo: str, cor: str) -> dict:
+    """Canal endêmico em ECharts: ano corrente sobre a faixa interquartil.
+
+    A faixa é o truque que o painel de origem (também ECharts) usa: duas
+    séries empilhadas — uma invisível no Q1 e outra com a altura Q3 − Q1 e
+    área pintada —, porque a biblioteca não desenha área entre duas linhas
+    arbitrárias. As duas ficam fora da legenda e do tooltip (`ocultas`).
+
+    O que o ECharts dá em troca: ao mudar o recorte, a linha do ano e a faixa
+    **deslizam** para os valores novos; os anos de referência entram e saem
+    com transição. Séries com `id` fixo por papel (`atual`, `q1`, `q3`,
+    `ref-<ano>`) para o casamento entre renders.
+
+    Tooltip unificado por mês (trigger ``axis``), como no Altair: comparar
+    março de 2024 com março de 2021 não pode depender de pontaria.
+    """
+    opt = _base()
+    if getattr(canal, "vazio", True):
+        return _recado(opt, "Sem série mensal para montar o canal")
+
+    atual = canal.atual.sort_values("mes")
+    meses = [str(m)[:3].capitalize() for m in atual["mes_nome"]]
+    faixa = canal.faixa.set_index("mes").reindex(atual["mes"])
+    anos = [int(a) for a in canal.anos]
+    rampa = list(RAMPA_REFERENCIA[-len(anos):]) if anos else []
+
+    q1 = [_valor(v) for v in faixa["q1"]]
+    q3 = [_valor(v) for v in faixa["q3"]]
+    altura_faixa = [
+        None if a is None or b is None else max(b - a, 0.0)
+        for a, b in zip(q1, q3, strict=True)
+    ]
+
+    series: list[dict] = [
+        {
+            "id": "faixa-base", "name": _FAIXA_BASE, "type": "line", "stack": "faixa",
+            "data": q1, "symbol": "none", "lineStyle": {"opacity": 0},
+            "silent": True, "z": 1,
+        },
+        {
+            "id": "faixa", "name": _FAIXA_ALTURA, "type": "line", "stack": "faixa",
+            "data": altura_faixa, "symbol": "none", "lineStyle": {"opacity": 0},
+            "areaStyle": {"color": COR_FAIXA, "opacity": 0.85}, "silent": True, "z": 1,
+        },
+    ]
+    for nome, dados_serie, ident in ((SERIE_Q1, q1, "q1"), (SERIE_Q3, q3, "q3")):
+        series.append({
+            "id": ident, "name": nome, "type": "line", "data": dados_serie,
+            "symbol": "circle", "symbolSize": 4,
+            "lineStyle": {"width": 1.5, "color": COR_BORDA_FAIXA},
+            "itemStyle": {"color": COR_BORDA_FAIXA}, "z": 2,
+        })
+    if not canal.referencia.empty:
+        for ano, tom in zip(anos, rampa, strict=True):
+            grupo = (
+                canal.referencia[canal.referencia["ano"] == ano]
+                .set_index("mes").reindex(atual["mes"])
+            )
+            series.append({
+                "id": f"ref-{ano}", "name": str(ano), "type": "line",
+                "data": [_valor(v) for v in grupo["valor"]],
+                "symbol": "none",
+                "lineStyle": {"width": 1.3, "type": [4, 3], "color": tom},
+                "itemStyle": {"color": tom}, "z": 3,
+            })
+    series.append({
+        "id": "atual", "name": SERIE_ATUAL, "type": "line",
+        "data": [_valor(v) for v in atual["valor"]],
+        "symbol": "circle", "symbolSize": 7,
+        "lineStyle": {"width": 2.8, "color": cor}, "itemStyle": {"color": cor}, "z": 5,
+    })
+
+    legenda = [SERIE_ATUAL, *[str(a) for a in anos], SERIE_Q1, SERIE_Q3]
+    opt.update({
+        "grid": {"left": 56, "right": 16, "top": 40, "bottom": 32},
+        "legend": {
+            "data": legenda, "top": 0, "left": 0, "icon": "roundRect",
+            "itemWidth": 14, "itemHeight": 3, "textStyle": {"fontSize": _FONTE_PX},
+        },
+        "xAxis": _eixo_categoria(meses),
+        "yAxis": _eixo_valor(rotulo),
+        "series": series,
+    })
+    opt["tooltip"].update({
+        "trigger": "axis",
+        "axisPointer": {"type": "line", "lineStyle": {"color": "rgba(128,128,128,.55)"}},
+        "ocultas": [_FAIXA_BASE, _FAIXA_ALTURA],
+        "casas": 2,
+    })
+    return opt
+
+
+def evolucao_anual(dados: pd.DataFrame, *, rotulo: str, cor: str, ano: int) -> dict:
+    """Série histórica anual em barras, com o ano selecionado destacado."""
+    opt = _base()
+    if dados.empty:
+        return _recado(opt, "Sem série histórica para este recorte")
+    base = dados.sort_values("ano")
+    itens = [
+        {
+            "name": str(int(a)), "value": _valor(v),
+            "itemStyle": {"opacity": 1.0 if int(a) == int(ano) else 0.45},
+        }
+        for a, v in zip(base["ano"], base["valor"], strict=True)
+    ]
+    opt.update({
+        "grid": {"left": 56, "right": 16, "top": 16, "bottom": 32},
+        "xAxis": {
+            "type": "category", "data": [i["name"] for i in itens],
+            "axisLine": {"lineStyle": {"color": _COR_EIXO}},
+            "axisTick": {"show": False},
+            "axisLabel": {"fontSize": _FONTE_PX},
+        },
+        "yAxis": _eixo_valor(rotulo),
+        "series": [{
+            "id": "anual", "type": "bar", "data": itens,
+            "itemStyle": {"color": cor, "borderRadius": [3, 3, 0, 0]},
+            "barCategoryGap": "25%",
+        }],
+    })
+    opt["tooltip"].update({"rotuloValor": rotulo, "casas": 1})
+    return opt
+
+
+def epicurva(dados: pd.DataFrame, *, rotulo: str, cor: str, ano_em_foco: int | None = None) -> dict:
+    """Série mensal contínua, atravessando os anos, com o ano em foco grosso.
+
+    Eixo de tempo (não categoria): são ~180 pontos, e o ECharts escolhe os
+    anos para rotular. O trecho do ano selecionado é uma segunda série sobre
+    a primeira, mais grossa — ao trocar o ano, o destaque desliza.
+    """
+    opt = _base()
+    if dados.empty:
+        return _recado(opt, "Sem série mensal para este recorte")
+    base = dados.sort_values(["ano", "mes"])
+
+    def pontos(df: pd.DataFrame) -> list:
+        return [
+            [f"{int(a)}-{int(m):02d}-01", _valor(c)]
+            for a, m, c in zip(df["ano"], df["mes"], df["casos"], strict=True)
+        ]
+
+    nome_foco = f"{rotulo} em {ano_em_foco}"
+    series = [{
+        "id": "serie", "name": rotulo, "type": "line", "data": pontos(base),
+        "symbol": "circle", "symbolSize": 6, "showSymbol": False,
+        "lineStyle": {"width": 1.6, "color": cor}, "itemStyle": {"color": cor},
+    }]
+    if ano_em_foco is not None:
+        foco = base[base["ano"] == ano_em_foco]
+        if not foco.empty:
+            series.append({
+                "id": "foco", "name": nome_foco, "type": "line", "data": pontos(foco),
+                "symbol": "none", "lineStyle": {"width": 3, "color": cor},
+                "itemStyle": {"color": cor}, "z": 3,
+            })
+    opt.update({
+        "grid": {"left": 56, "right": 16, "top": 12, "bottom": 32},
+        "xAxis": {
+            "type": "time",
+            "axisLine": {"lineStyle": {"color": _COR_EIXO}},
+            "axisTick": {"lineStyle": {"color": _COR_EIXO}},
+            "axisLabel": {"fontSize": _FONTE_PX, "formatter": "{yyyy}"},
+            "splitLine": {"show": False},
+        },
+        "yAxis": _eixo_valor(rotulo),
+        "series": series,
+    })
+    opt["tooltip"].update({
+        "trigger": "axis",
+        "axisPointer": {"type": "line", "lineStyle": {"color": "rgba(128,128,128,.55)"}},
+        "ocultas": [nome_foco],
+        "casas": 0,
+        "mesNoEixo": True,
+    })
+    return opt

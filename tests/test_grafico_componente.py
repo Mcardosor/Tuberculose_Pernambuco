@@ -110,3 +110,39 @@ def test_composicao_numerica_respeita_a_ordem_dos_dados() -> None:
 def test_composicao_vazia_tem_recado() -> None:
     opt = gc.composicao(pd.DataFrame(columns=["categoria", "n", "pct", "total"]), rotulo="x", cor="#000")
     assert "Sem registro" in opt["title"]["text"]
+
+
+def test_canal_tem_faixa_muda_referencias_e_ano_por_cima() -> None:
+    from src.data import canal as mod_canal
+
+    faixa = pd.DataFrame({"mes": [1, 2], "mes_nome": ["janeiro", "fevereiro"], "q1": [1.0, 1.5], "q3": [2.0, 2.5]})
+    ref = pd.DataFrame({"mes": [1, 2, 1, 2], "mes_nome": ["janeiro", "fevereiro"] * 2, "ano": [2022, 2022, 2023, 2023], "valor": [1.2, 1.8, 1.9, 2.2]})
+    atual = pd.DataFrame({"mes": [1, 2], "mes_nome": ["janeiro", "fevereiro"], "valor": [2.4, 1.1]})
+    c = mod_canal.Canal(faixa=faixa, referencia=ref, atual=atual, anos=(2022, 2023))
+    opt = gc.canal_endemico(c, rotulo="Incidência", cor="#92400E")
+    ids = [s["id"] for s in opt["series"]]
+    assert ids == ["faixa-base", "faixa", "q1", "q3", "ref-2022", "ref-2023", "atual"]
+    # A faixa é empilhada: base no Q1 e altura Q3 − Q1.
+    assert opt["series"][0]["data"] == [1.0, 1.5]
+    assert opt["series"][1]["data"] == [1.0, 1.0]
+    # As duas séries mudas ficam fora da legenda e do tooltip.
+    assert opt["legend"]["data"] == ["Ano selecionado", "2022", "2023", "Q1", "Q3"]
+    assert set(opt["tooltip"]["ocultas"]) == {s["name"] for s in opt["series"][:2]}
+    assert opt["series"][-1]["data"] == [2.4, 1.1]
+    assert opt["xAxis"]["data"] == ["Jan", "Fev"]
+
+
+def test_epicurva_usa_eixo_de_tempo_e_destaca_o_ano() -> None:
+    base = pd.DataFrame({"ano": [2023, 2023, 2024], "mes": [11, 12, 1], "casos": [10, 12, 9], "ano_mes": ["2023-11", "2023-12", "2024-01"]})
+    opt = gc.epicurva(base, rotulo="Casos", cor="#C1440A", ano_em_foco=2024)
+    assert opt["xAxis"]["type"] == "time"
+    assert opt["series"][0]["data"][0] == ["2023-11-01", 10.0]
+    assert opt["series"][1]["id"] == "foco" and opt["series"][1]["data"] == [["2024-01-01", 9.0]]
+    assert opt["tooltip"]["ocultas"] == ["Casos em 2024"]
+
+
+def test_evolucao_anual_destaca_o_ano() -> None:
+    base = pd.DataFrame({"ano": [2022, 2023, 2024], "valor": [50.0, 52.0, 55.0]})
+    opt = gc.evolucao_anual(base, rotulo="x", cor="#000", ano=2024)
+    por_ano = {i["name"]: i["itemStyle"]["opacity"] for i in opt["series"][0]["data"]}
+    assert por_ano == {"2022": 0.45, "2023": 0.45, "2024": 1.0}
