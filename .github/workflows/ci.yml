@@ -51,6 +51,9 @@ jobs:
       - name: Constrói a imagem
         run: docker build -t tbpe:ci .
 
+      # `--entrypoint`: a imagem tem o Streamlit como ENTRYPOINT, e sem isto
+      # o `ls` vira argumento do servidor, que sobe e fica no ar até o
+      # runner cancelar o job por tempo — seis horas, na primeira execução.
       - name: A imagem carrega os componentes vendorados
         run: |
-          docker run --rm tbpe:ci ls src/componente_mapa/deck.min.js src/componente_grafico/echarts.min.js
+          docker run --rm --entrypoint ls tbpe:ci             src/componente_mapa/deck.min.js src/componente_grafico/echarts.min.js
