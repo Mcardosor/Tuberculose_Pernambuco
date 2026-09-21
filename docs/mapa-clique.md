@@ -135,7 +135,8 @@ Pedido de 21/set/2026: o "talento" do mapa nos gráficos. O Altair/Vega-Lite
 não anima entre dois estados, então cada gráfico migrado vira uma opção
 ECharts (`src/grafico_componente.py`) entregue a um componente que mantém a
 instância viva (`src/componente_grafico/`) e só chama `setOption` — o
-ECharts interpola o que mudou. Feito: **ranking** (barras deslizam para o
+ECharts interpola o que mudou. Feitos: **ranking** (barras deslizam para o
 valor e a posição novos; cor por classe do mapa; clique destaca/entra, com
-nonce). A fazer, na ordem de retorno: tópicos de interesse, canal endêmico e
-epicurva, pirâmide.
+nonce) e **tópicos de interesse** (uma instância por variável, `key` com o
+código; ao clicar no mapa as dez trocam juntas, barra a barra). A fazer:
+canal endêmico e epicurva, pirâmide.

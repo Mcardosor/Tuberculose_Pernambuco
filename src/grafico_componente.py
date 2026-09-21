@@ -27,6 +27,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit.components.v1 as components
 
+from .theme import componentes as ui
 from .theme import tokens
 
 DIRETORIO = Path(__file__).resolve().parent / "componente_grafico"
@@ -192,4 +193,98 @@ def ranking(
     # deste rótulo: um `formatter` de texto do ECharts não formata número.
     opt["tooltip"]["rotuloValor"] = rotulo
     opt["tooltip"]["casas"] = 1
+    return opt
+
+
+def composicao(
+    dados: pd.DataFrame,
+    *,
+    rotulo: str,
+    cor: str,
+    largura_rotulo: int = 220,
+    ordem_dos_dados: bool = False,
+) -> dict:
+    """Distribuição de uma variável do SINAN, em barras horizontais — ECharts.
+
+    Mesmas decisões do `graficos.composicao` Altair: percentual quando a base
+    sustenta e contagem quando não (a decisão vem de `leitura.composicao`),
+    ordem por frequência salvo variável numérica, o nome da variável como
+    título. Ao mudar o recorte, cada categoria desliza para o valor novo —
+    casada pelo nome —, e as dez do painel trocam juntas.
+
+    O tooltip vem pronto de cada item (``tooltip``, HTML), formatado em
+    pt-BR aqui: o ECharts não formata número por texto.
+    """
+    opt = _base()
+    opt["title"] = {
+        "text": rotulo,
+        "left": 0,
+        "top": 0,
+        "textStyle": {"fontSize": 13, "fontWeight": 600},
+    }
+    if dados.empty:
+        opt["title"] = {
+            "text": "Sem registro desta variável no recorte",
+            "left": "center", "top": "middle",
+            "textStyle": {"fontSize": _FONTE_PX, "fontWeight": "normal"},
+        }
+        return opt
+
+    base = dados.copy()
+    percentual = "pct" in base.columns and base["pct"].notna().any()
+    base["valor"] = pd.to_numeric(base["pct"] if percentual else base["n"], errors="coerce")
+    titulo_x = "% dos casos" if percentual else "Casos"
+
+    if not ordem_dos_dados:
+        base = base.sort_values("valor", ascending=False)
+    # Eixo de categoria cresce de baixo para cima: o primeiro da lista fica
+    # embaixo, então a ordem de leitura se inverte aqui.
+    base = base.iloc[::-1]
+
+    itens = []
+    for linha in base.itertuples(index=False):
+        n = getattr(linha, "n", None)
+        pct = getattr(linha, "pct", None)
+        partes = [f"<b>{linha.categoria}</b>", f"Casos: <b>{ui.formatar_inteiro(None if pd.isna(n) else float(n))}</b>"]
+        if percentual and pct is not None and not pd.isna(pct):
+            partes.append(f"% dos casos: <b>{ui.formatar_decimal(float(pct), 1)}</b>")
+        itens.append({
+            "name": str(linha.categoria),
+            "value": None if pd.isna(linha.valor) else float(linha.valor),
+            "tooltip": "<br/>".join(partes),
+        })
+
+    opt.update({
+        "grid": {"left": largura_rotulo + 8, "right": 16, "top": 34, "bottom": 40},
+        "xAxis": {
+            "type": "value",
+            "name": titulo_x,
+            "nameLocation": "middle",
+            "nameGap": 26,
+            "nameTextStyle": {"fontSize": _FONTE_PX},
+            "splitNumber": 5,
+            "axisLine": {"lineStyle": {"color": _COR_EIXO}},
+            "axisTick": {"lineStyle": {"color": _COR_EIXO}},
+            "splitLine": {"lineStyle": {"color": _COR_GRADE}},
+            "axisLabel": {"fontSize": _FONTE_PX},
+        },
+        "yAxis": {
+            "type": "category",
+            "data": [i["name"] for i in itens],
+            "axisLine": {"lineStyle": {"color": _COR_EIXO}},
+            "axisTick": {"show": False},
+            "axisLabel": {
+                "fontSize": _FONTE_PX,
+                "width": largura_rotulo,
+                "overflow": "truncate",
+            },
+        },
+        "series": [{
+            "id": "composicao",
+            "type": "bar",
+            "data": itens,
+            "barCategoryGap": "30%",
+            "itemStyle": {"color": cor, "borderRadius": [0, 2, 2, 0]},
+        }],
+    })
     return opt

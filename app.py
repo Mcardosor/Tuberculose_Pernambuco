@@ -606,16 +606,18 @@ AJUDA_TOPICOS = (
 
 def _desenhar_topico(variavel: str, rotulo: str, altura: int) -> None:
     dados = _composicao(nav.ano, nav.nivel, nav.mun, nav.macro, nav.micro, variavel)
-    st.altair_chart(
-        graficos.composicao(
+    # ECharts vivo, uma instância por variável (`key` leva o código): ao
+    # clicar no mapa, as barras das dez deslizam juntas para o recorte novo.
+    grafico_componente.desenhar(
+        grafico_componente.composicao(
             dados,
             rotulo=rotulo,
             cor=pack.cor("casos"),
-            altura=altura,
             largura_rotulo=LARGURA_ROTULO_TOPICO,
             ordem_dos_dados=variavel in pack.VARIAVEIS_NUMERICAS,
         ),
-        width="stretch",
+        altura=altura,
+        key=f"topico-{variavel}",
     )
     if not dados.empty and dados["pct"].isna().all():
         st.caption(

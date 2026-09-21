@@ -59,15 +59,21 @@
     option.textStyle = Object.assign({ color: corTexto, fontFamily: fonte }, option.textStyle || {});
     // Tooltip em pt-BR: o Python manda o rótulo e as casas; o formatador é
     // função, e função não viaja em JSON.
-    if (option.tooltip && option.tooltip.rotuloValor) {
+    // Duas formas: o item traz o HTML pronto (`data.tooltip`), ou o Python
+    // manda rótulo e casas e o número é formatado aqui.
+    if (option.tooltip) {
       const rotulo = option.tooltip.rotuloValor;
       const casas = Number(option.tooltip.casas) || 0;
       option.tooltip.formatter = (p) => {
         const v = Array.isArray(p) ? p[0] : p;
+        if (v.data && typeof v.data === "object" && v.data.tooltip) return v.data.tooltip;
         const num = v.value === null || v.value === undefined ? "—"
           : Number(v.value).toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
-        return "<b>" + v.name + "</b><br/>" + rotulo + ": <b>" + num + "</b>";
+        return "<b>" + v.name + "</b><br/>" + (rotulo || v.seriesName || "") + ": <b>" + num + "</b>";
       };
+    }
+    if (option.title && option.title.textStyle && !option.title.textStyle.color) {
+      option.title.textStyle.color = corTexto;
     }
     if (option.yAxis && option.yAxis.axisLabel) {
       option.yAxis.axisLabel.color = corTexto;

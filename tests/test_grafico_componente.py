@@ -71,3 +71,42 @@ def test_clique_novo_navega_e_repetido_nao() -> None:
     assert gc.alvo_do_clique(ev, "a-1") == (None, None)
     assert gc.alvo_do_clique({"nonce": "a-2", "name": "Agreste"}, "a-1") == ("Agreste", "a-2")
     assert gc.alvo_do_clique(None, None) == (None, None)
+
+
+def _composicao() -> pd.DataFrame:
+    return pd.DataFrame({
+        "categoria": ["Favorável", "Desfavorável", "Não avaliado"],
+        "n": [2621.0, 985.0, 744.0],
+        "pct": [60.25, 22.64, 17.10],
+        "total": [4350.0] * 3,
+    })
+
+
+def test_composicao_por_frequencia_com_o_maior_no_topo() -> None:
+    opt = gc.composicao(_composicao(), rotulo="Situação de encerramento", cor="#C1440A")
+    assert opt["title"]["text"] == "Situação de encerramento"
+    assert opt["yAxis"]["data"] == ["Não avaliado", "Desfavorável", "Favorável"]
+    assert opt["xAxis"]["name"] == "% dos casos"
+    assert opt["series"][0]["id"] == "composicao"
+    topo = opt["series"][0]["data"][-1]
+    assert topo["name"] == "Favorável" and topo["value"] == 60.25
+    assert "Casos: <b>2.621</b>" in topo["tooltip"] and "% dos casos: <b>60,2</b>" in topo["tooltip"]
+
+
+def test_composicao_sem_percentual_mostra_contagem() -> None:
+    base = _composicao().assign(pct=pd.NA)
+    opt = gc.composicao(base, rotulo="x", cor="#000")
+    assert opt["xAxis"]["name"] == "Casos"
+    assert opt["series"][0]["data"][-1]["value"] == 2621.0
+    assert "% dos casos" not in opt["series"][0]["data"][-1]["tooltip"]
+
+
+def test_composicao_numerica_respeita_a_ordem_dos_dados() -> None:
+    base = pd.DataFrame({"categoria": ["0", "1", "2"], "n": [5, 50, 20], "pct": [6.7, 66.7, 26.6], "total": [75] * 3})
+    opt = gc.composicao(base, rotulo="x", cor="#000", ordem_dos_dados=True)
+    assert opt["yAxis"]["data"] == ["2", "1", "0"]
+
+
+def test_composicao_vazia_tem_recado() -> None:
+    opt = gc.composicao(pd.DataFrame(columns=["categoria", "n", "pct", "total"]), rotulo="x", cor="#000")
+    assert "Sem registro" in opt["title"]["text"]
