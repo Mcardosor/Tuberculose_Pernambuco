@@ -523,3 +523,86 @@ def epicurva(dados: pd.DataFrame, *, rotulo: str, cor: str, ano_em_foco: int | N
         "mesNoEixo": True,
     })
     return opt
+
+
+# ---------------------------------------------------------------------------
+# Pirâmide etária
+# ---------------------------------------------------------------------------
+
+#: Cores dos dois lados, as mesmas do Altair: deliberadamente não é rosa e
+#: azul, e o azul da mortalidade já está tomado.
+COR_HOMENS = "#1C5D99"
+COR_MULHERES = "#B8860B"
+
+
+def piramide(dados: pd.DataFrame, *, rotulo: str, por_100mil: bool = False) -> dict:
+    """Pirâmide etária em ECharts: homens à esquerda, mulheres à direita.
+
+    Escala única e simétrica, como no Altair: em tuberculose os homens somam
+    quase o triplo das mulheres, e sem simetria o eixo cresce só para a
+    esquerda e o excesso masculino — o achado — vira efeito de escala. Os
+    valores dos homens vão negativos para ficarem à esquerda; o eixo e o
+    tooltip mostram o módulo (`absoluto`, montado no JavaScript).
+
+    Duas séries com `id` fixo (`homens`, `mulheres`), itens casados pela
+    faixa etária: ao mudar o recorte, cada barra desliza para o valor novo.
+    """
+    opt = _base()
+    if dados.empty:
+        return _recado(opt, "Sem dado por faixa etária para este recorte")
+
+    base = dados.copy()
+    if por_100mil:
+        pop = pd.to_numeric(base["pop"], errors="coerce")
+        base["valor"] = (base["valor"] / pop * 100_000).where(pop > 0)
+        base = base.dropna(subset=["valor"])
+        if base.empty:
+            return _recado(opt, "Sem população para calcular a taxa")
+        rotulo = f"{rotulo} por 100 mil hab."
+    casas = 1 if por_100mil else 0
+
+    faixas = [f for _, f in sorted({(r.faixa_ord, r.faixa_etaria) for r in base.itertuples()})]
+    por_sexo = {
+        sexo: base[base["sexo"] == sexo].set_index("faixa_etaria")["valor"].reindex(faixas)
+        for sexo in ("M", "F")
+    }
+    limite = float(pd.to_numeric(base["valor"], errors="coerce").abs().max() or 0) or 1.0
+
+    def serie(ident, nome, sexo, cor, sinal):
+        return {
+            "id": ident, "name": nome, "type": "bar", "stack": "piramide",
+            "data": [
+                {"name": faixa, "value": None if pd.isna(v) else sinal * float(v)}
+                for faixa, v in por_sexo[sexo].items()
+            ],
+            "itemStyle": {"color": cor},
+            "barCategoryGap": "22%",
+        }
+
+    opt.update({
+        "grid": {"left": 112, "right": 16, "top": 34, "bottom": 40},
+        "legend": {
+            "data": ["Homens", "Mulheres"], "top": 0, "left": 0,
+            "icon": "roundRect", "itemWidth": 12, "itemHeight": 12,
+            "textStyle": {"fontSize": _FONTE_PX},
+        },
+        "xAxis": {
+            **_eixo_valor(rotulo),
+            "min": -limite, "max": limite,
+            "nameGap": 26,
+            "absoluto": True,
+        },
+        "yAxis": {
+            "type": "category",
+            "data": faixas,
+            "axisLine": {"lineStyle": {"color": _COR_EIXO}},
+            "axisTick": {"show": False},
+            "axisLabel": {"fontSize": _FONTE_PX, "interval": 0},
+        },
+        "series": [
+            serie("homens", "Homens", "M", COR_HOMENS, -1),
+            serie("mulheres", "Mulheres", "F", COR_MULHERES, 1),
+        ],
+    })
+    opt["tooltip"].update({"rotuloValor": rotulo, "casas": casas, "absoluto": True})
+    return opt

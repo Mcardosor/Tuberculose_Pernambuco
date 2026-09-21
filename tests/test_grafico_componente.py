@@ -146,3 +146,36 @@ def test_evolucao_anual_destaca_o_ano() -> None:
     opt = gc.evolucao_anual(base, rotulo="x", cor="#000", ano=2024)
     por_ano = {i["name"]: i["itemStyle"]["opacity"] for i in opt["series"][0]["data"]}
     assert por_ano == {"2022": 0.45, "2023": 0.45, "2024": 1.0}
+
+
+def _piramide() -> pd.DataFrame:
+    return pd.DataFrame({
+        "sexo": ["M", "F", "M", "F"],
+        "faixa_ord": [0, 0, 5, 5],
+        "faixa_etaria": ["0 a 4 anos", "0 a 4 anos", "5 a 9 anos", "5 a 9 anos"],
+        "valor": [60.0, 49.0, 39.0, 35.0],
+        "pop": [300000.0, 290000.0, 340000.0, 330000.0],
+    })
+
+
+def test_piramide_homens_negativos_a_esquerda_e_eixo_simetrico() -> None:
+    opt = gc.piramide(_piramide(), rotulo="Casos")
+    homens, mulheres = opt["series"]
+    assert homens["id"] == "homens" and mulheres["id"] == "mulheres"
+    assert homens["data"][0] == {"name": "0 a 4 anos", "value": -60.0}
+    assert mulheres["data"][0]["value"] == 49.0
+    assert opt["xAxis"]["min"] == -60.0 and opt["xAxis"]["max"] == 60.0
+    assert opt["xAxis"]["absoluto"] is True and opt["tooltip"]["absoluto"] is True
+    assert opt["yAxis"]["data"] == ["0 a 4 anos", "5 a 9 anos"]
+
+
+def test_piramide_por_100_mil_recalcula_e_muda_o_rotulo() -> None:
+    opt = gc.piramide(_piramide(), rotulo="Casos", por_100mil=True)
+    assert opt["xAxis"]["name"] == "Casos por 100 mil hab."
+    assert opt["series"][0]["data"][0]["value"] == -20.0
+    assert opt["tooltip"]["casas"] == 1
+
+
+def test_piramide_vazia_tem_recado() -> None:
+    opt = gc.piramide(pd.DataFrame(columns=["sexo", "faixa_ord", "faixa_etaria", "valor", "pop"]), rotulo="Casos")
+    assert "Sem dado" in opt["title"]["text"]

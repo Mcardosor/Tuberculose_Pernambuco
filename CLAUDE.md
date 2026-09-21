@@ -81,10 +81,10 @@ PE) → `src/data/*` → `src/mapa.py` e `src/graficos.py`.
   `key` é estável de propósito; o clique volta com nonce e `app.py` guarda o
   último em `session_state`. Bundles do deck.gl 9.3 vendorados (CDN
   bloqueado na rede). Detalhes e medição: `docs/mapa-clique.md`.
-- **Ranking, tópicos, canal, série anual e epicurva são ECharts** (`src/grafico_componente.py` +
+- **Todos os gráficos são ECharts** (`src/grafico_componente.py` +
   `src/componente_grafico/`, ECharts 5.6 vendorado), pelo mesmo motivo: o
-  Altair não anima entre dois estados. A migração é gráfico a gráfico; o
-  `graficos.py` Altair continua valendo para os demais. Regras: todo item
+  Altair não anima entre dois estados. O `graficos.py` Altair ficou sem
+  consumidor na tela (só tema e `alvo_do_clique` das barras nos testes). Regras: todo item
   leva `name` (é o que casa e anima), série com `id` fixo, clique com nonce.
 - **Animação não se mede no navegador embutido do app**: ele roda a 1
   frame/s quando a janela está oculta e o voo vira salto. Falso negativo.

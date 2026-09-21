@@ -90,9 +90,10 @@
         }
         const v = Array.isArray(p) ? p[0] : p;
         if (v.data && typeof v.data === "object" && v.data.tooltip) return v.data.tooltip;
-        const num = v.value === null || v.value === undefined ? "—"
-          : Number(v.value).toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
-        return "<b>" + v.name + "</b><br/>" + (rotulo || v.seriesName || "") + ": <b>" + num + "</b>";
+        const bruto = Array.isArray(v.value) ? v.value[1] : v.value;
+        const num = fmt(option.tooltip.absoluto && bruto !== null && bruto !== undefined ? Math.abs(bruto) : bruto);
+        const cabeca = option.tooltip.absoluto ? v.name + " · " + v.seriesName : v.name;
+        return "<b>" + cabeca + "</b><br/>" + (rotulo || v.seriesName || "") + ": <b>" + num + "</b>";
       };
     }
     if (option.title && option.title.textStyle && !option.title.textStyle.color) {
@@ -105,6 +106,11 @@
     }
     if (option.xAxis && option.xAxis.axisLabel) {
       option.xAxis.axisLabel.color = corTexto;
+      // Pirâmide: o lado esquerdo é negativo só para ficar à esquerda;
+      // "-500 casos" não existe, então o eixo mostra o módulo.
+      if (option.xAxis.absoluto) {
+        option.xAxis.axisLabel.formatter = (v) => Math.abs(v).toLocaleString("pt-BR");
+      }
       if (option.xAxis.nameTextStyle) option.xAxis.nameTextStyle.color = corTexto;
     }
 

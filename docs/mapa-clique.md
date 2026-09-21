@@ -141,5 +141,7 @@ nonce) e **tópicos de interesse** (uma instância por variável, `key` com o
 código; ao clicar no mapa as dez trocam juntas, barra a barra), **canal
 endêmico** (faixa por duas séries empilhadas, como no painel de origem; a
 linha do ano e a faixa deslizam ao mudar o recorte), **série anual** e
-**epicurva** (eixo de tempo; o trecho do ano em foco é uma série por cima).
-A fazer: pirâmide.
+**epicurva** (eixo de tempo; o trecho do ano em foco é uma série por cima) e
+**pirâmide** (homens negativos à esquerda, eixo simétrico, módulo no eixo e
+no tooltip). A migração está completa: `graficos.py` só fica com o tema e
+as funções que ninguém chama mais — candidato a limpeza com `ruff`.

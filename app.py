@@ -581,12 +581,13 @@ with direita:
                 "Por 100 mil habitantes",
                 help="Desconta o tamanho de cada faixa etária na população.",
             )
-            st.altair_chart(
-                graficos.piramide(
-                    dados_pir, rotulo="Casos", por_100mil=por_100mil,
-                    altura=ALTURA_LINHA_1 - 160,
-                ),
-                width="stretch",
+            # ECharts vivo: as barras deslizam ao mudar o recorte ou o toggle.
+            # A altura é piso e não teto, como no Altair: onze faixas pedem
+            # 30px cada ou as barras encavalam.
+            grafico_componente.desenhar(
+                grafico_componente.piramide(dados_pir, rotulo="Casos", por_100mil=por_100mil),
+                altura=max(ALTURA_LINHA_1 - 160, 280, 30 * dados_pir["faixa_etaria"].nunique() + 80),
+                key="piramide",
             )
 
 
