@@ -1,864 +1,653 @@
-"""
-app.py — Dashboard TB Pernambuco
-════════════════════════════════
-Um "frankenstein" deliberado dos três painéis da família Cenários+:
+"""Painel de Monitoramento da Tuberculose — Pernambuco.
 
-  • esqueleto  → dashboard-tb-recife (hero + KPIs fixos no topo + abas)
-  • gráficos   → dashboard-tb-v3, o painel nacional (pirâmide etária, composição
-                 100% de desfecho, heatmap, oportunidade do tratamento…)
-  • mapa       → três níveis da hierarquia de saúde de PE, os mesmos do painel
-                 Superset: município, região de saúde e macrorregião
-  • Análise Livre → o próprio Apache Superset de PE, embutido
+O RecifeTB ampliado para o estado: a mesma tela do painel em R da equipe
+parceira (cabeçalho com bandeira, faixa de seis KPIs, mapa à esquerda e abas
+à direita, tópicos de interesse embaixo), sobre o core do painel nacional
+(`../sinan`) e a navegação PE → macrorregião → região de saúde → município
+do hansepe. Página única.
 
-Rodar local:  python -m streamlit run app.py   →  http://localhost:8501
+**Este arquivo é composição, não lógica.** Toda conta vive em ``src/data/``;
+o que está aqui é arranjo de tela e fiação de estado.
 """
 
 from __future__ import annotations
 
-import json
-import os
-
+import altair as alt
+import pandas as pd
 import streamlit as st
 
-from src import banco, graficos, indicadores, mapas, precomputado, styles
-from src.constantes import (
-    ANO_FIM, ANO_INICIO, COR_ABANDONO, COR_CURA, COR_HIV, COR_MASC, COR_OBITO,
-    DENOMINADOR_MINIMO_TAXA, META_ABANDONO_OMS, NIVEIS_GEO, NIVEL_PADRAO,
-    PLOTLY_CFG, fmt_dec, fmt_int,
-)
-from src.filtros import Filtros
-from src.seguranca import url_segura
+from src import doencas, graficos, mapa, resiliencia
+from src.data import canal, geo, leitura, recortes
+from src.data import kpis as calc
+from src.data.escopo import Escopo
+from src.estado import RECORTES, UF_FIXA, Navegacao
+from src.theme import componentes as ui
 
-st.set_page_config(page_title="Dashboard TB | Pernambuco", page_icon="🩺", layout="wide")
-styles.inject_css()
-styles.navbar()
+#: A doença vem do ambiente (``SINAN_DOENCA``), não de um import fixo.
+pack = doencas.carregar()
 
-
-# ── Pré-aquecimento da conexão ────────────────────────────────────────────────
-# A visão padrão vem inteira do `_agregados.json` gerado no ETL, então a primeira
-# tela nem toca no DuckDB. O custo frio migrou para a PRIMEIRA interação com
-# filtro — é ela que materializa as tabelas em memória. Esta thread faz isso em
-# segundo plano enquanto o usuário lê o hero.
-@st.cache_resource(show_spinner=False)
-def _aquecer() -> bool:
-    import threading
-
-    def _fundo():
-        try:
-            banco.escalar("SELECT count(*) FROM tb")
-        except Exception:
-            pass  # aquecimento é best-effort: falhar aqui não pode derrubar a página
-
-    threading.Thread(target=_fundo, daemon=True).start()
-    return True
-
-
-_aquecer()
-
-if not precomputado.disponivel():
-    st.sidebar.caption(
-        "⚙️ Agregados pré-computados ausentes ou desatualizados — "
-        "rode `python etl/precomputar.py`. O painel funciona normalmente, "
-        "só carrega mais devagar."
-    )
-
-META = indicadores.meta()
-ANOS = META["anos"]
-ANO_PARCIAL = META["ano_parcial"]
-ANOS_COMPLETOS = [a for a in ANOS if a != ANO_PARCIAL] or ANOS
-
-# Raiz da aplicação Superset — NÃO um dashboard específico.
-#
-# A Análise Livre existe para a pessoa montar a análise que ela quiser: criar
-# gráfico novo, cruzar variáveis, rodar SQL, salvar dashboard próprio. Apontar
-# para `/dashboard/<slug>/?standalone=1` daria o oposto disso — `standalone=1`
-# é justamente o parâmetro que remove a navegação do Superset e entrega só um
-# painel fechado, que é o que este painel já faz nas outras seções.
-SUPERSET_URL = os.getenv("SUPERSET_URL", "http://localhost:8590/")
-
-_MS = dict(label_visibility="collapsed", placeholder="Todos")
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  SIDEBAR — filtros (geografia em cascata: macro → região → município)
-# ══════════════════════════════════════════════════════════════════════════════
-def _preset_anos(anos: list[int]) -> None:
-    st.session_state["f_anos"] = anos
-
-
-def _limpar_geo_abaixo() -> None:
-    """Ao mudar a macrorregião, as seleções de região/município ficam inválidas."""
-    st.session_state["f_regioes"] = []
-    st.session_state["f_municipios"] = []
-
-
-def _limpar_municipios() -> None:
-    st.session_state["f_municipios"] = []
-
-
-def render_sidebar() -> Filtros:
-    with st.sidebar:
-        st.markdown("## 🩺 TB · Pernambuco")
-
-        # ── Período ───────────────────────────────────────────────────────────
-        st.caption("📅 Ano de notificação")
-        c1, c2 = st.columns(2)
-        c1.button("Último ano", width="stretch",
-                  on_click=_preset_anos, args=([max(ANOS_COMPLETOS)],))
-        c2.button("Últimos 5", width="stretch",
-                  on_click=_preset_anos, args=(ANOS_COMPLETOS[-5:],))
-        c1.button("Últimos 10", width="stretch",
-                  on_click=_preset_anos, args=(ANOS_COMPLETOS[-10:],))
-        c2.button("Série completa", width="stretch",
-                  on_click=_preset_anos, args=(list(ANOS),))
-
-        st.session_state.setdefault("f_anos", list(ANOS))
-        anos = st.multiselect("Anos", options=list(reversed(ANOS)),
-                              key="f_anos", label_visibility="collapsed")
-        if not anos:
-            anos = list(ANOS)
-        if ANO_PARCIAL in anos:
-            st.caption(f"⚠️ {ANO_PARCIAL}: dados parciais "
-                       "(atraso de notificação do SINAN).")
-
-        # ── Geografia em cascata ──────────────────────────────────────────────
-        st.caption("📍 Hierarquia de saúde")
-        macros = st.multiselect("Macrorregião", options=META["macros"],
-                                key="f_macros", on_change=_limpar_geo_abaixo, **_MS)
-        regioes = st.multiselect("Região de Saúde",
-                                 options=indicadores.regioes_de(tuple(macros)),
-                                 key="f_regioes", on_change=_limpar_municipios, **_MS)
-        municipios = st.multiselect(
-            "Município",
-            options=indicadores.municipios_de(tuple(macros), tuple(regioes)),
-            key="f_municipios", **_MS,
-        )
-
-        # ── Perfil ────────────────────────────────────────────────────────────
-        with st.expander("👤 Perfil do paciente"):
-            sexo = st.multiselect("Sexo", META["opcoes"]["sexo"], key="f_sexo", **_MS)
-            forma = st.multiselect("Forma clínica", META["opcoes"]["formas"],
-                                   key="f_formas", **_MS)
-            raca = st.multiselect("Raça/cor", META["opcoes"]["racas"],
-                                  key="f_racas", **_MS)
-
-        with st.expander("🏥 Perfil clínico"):
-            entrada = st.multiselect("Tipo de entrada", META["opcoes"]["entradas"],
-                                     key="f_entradas", **_MS)
-            hiv = st.multiselect("Status HIV", META["opcoes"]["hiv"], key="f_hiv", **_MS)
-
-        with st.expander("⚠️ Populações vulneráveis"):
-            st.caption("Incluir apenas pacientes que sejam:")
-            vuln = [c for c, rot in META["vulneraveis"].items()
-                    if st.checkbox(rot, key=f"f_v_{c}")]
-
-        with st.expander("💊 Comorbidades"):
-            st.caption("Incluir apenas pacientes com:")
-            agravos = [c for c, rot in META["agravos"].items()
-                       if st.checkbox(rot, key=f"f_a_{c}")]
-
-        st.divider()
-        if st.button("🔄 Limpar cache", width="stretch"):
-            st.cache_data.clear()
-            st.cache_resource.clear()
-            st.rerun()
-
-    return Filtros(
-        anos=tuple(sorted(set(anos))),
-        macros=tuple(sorted(macros)),
-        regioes=tuple(sorted(regioes)),
-        municipios=tuple(sorted(municipios)),
-        sexo=tuple(sorted(sexo)),
-        formas=tuple(sorted(forma)),
-        racas=tuple(sorted(raca)),
-        entradas=tuple(sorted(entrada)),
-        hiv=tuple(sorted(hiv)),
-        vuln=tuple(sorted(vuln)),
-        agravos=tuple(sorted(agravos)),
-    )
-
-
-F = render_sidebar()
-
-try:
-    R = indicadores.resumo(F)
-except Exception as erro:  # noqa: BLE001 — a mensagem precisa chegar ao usuário
-    st.error(f"Erro ao carregar dados: {erro}")
-    st.info("Rode `python etl/preparar_dados.py` e `python etl/baixar_populacao.py` "
-            "para gerar os arquivos em `dados_dashboard/`.")
-    st.stop()
-
-if not R["total"]:
-    st.warning("Nenhum caso corresponde aos filtros selecionados. "
-               "Amplie o recorte na barra lateral.")
-    st.stop()
-
-with st.sidebar:
-    st.metric("Registros filtrados", fmt_int(R["total"]),
-              f"de {fmt_int(R['total_base'])} "
-              f"({fmt_dec(100 * R['total'] / R['total_base'])}%)",
-              delta_color="off")
-    st.caption("Fonte: SINAN NET · Ministério da Saúde")
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  HERO + KPIs
-# ══════════════════════════════════════════════════════════════════════════════
-_label_anos = (f"{min(F.anos)}–{max(F.anos)}" if len(F.anos) > 1 else str(F.anos[0]))
-_badges = [
-    (_label_anos, "accent"),
-    (f"{fmt_int(R['total'])} casos notificados", ""),
-    (f"{R['municipios']} municípios com casos", ""),
-    ("Fonte: SINAN · residência", ""),
-]
-if ANO_PARCIAL in F.anos:
-    _badges.append((f"{ANO_PARCIAL} parcial", "warn"))
-
-styles.hero(
-    titulo=f"Tuberculose · {F.rotulo_geo()}",
-    subtitulo=(
-        "Vigilância epidemiológica da tuberculose em Pernambuco por município, "
-        "região de saúde e macrorregião de saúde. Recorte por residência do "
-        f"paciente — a mesma regra do boletim epidemiológico estadual ({ANO_INICIO}–{ANO_FIM})."
-    ),
-    badges=_badges,
+st.set_page_config(
+    page_title=f"{pack.TITULO} — Pernambuco",
+    layout="wide",
+    initial_sidebar_state="collapsed",
 )
 
-_abandono_alto = R["taxa_abandono"] > META_ABANDONO_OMS
-styles.kpi_row([
-    {"label": "Incidência", "value": fmt_dec(R["incidencia"]),
-     "sub": f"/100 mil · {fmt_int(R['novos'])} casos novos",
-     "icon": "📈", "accent": COR_MASC},
-    {"label": "Cura (casos novos)", "value": f"{fmt_dec(R['taxa_cura_novo'])}%",
-     "sub": f"retratamento {fmt_dec(R['taxa_cura_retrat'])}%",
-     "icon": "✅", "accent": COR_CURA},
-    {"label": "Abandono", "value": f"{fmt_dec(R['taxa_abandono'])}%",
-     "sub": ("⚠ acima da meta OMS (5%)" if _abandono_alto else "dentro da meta OMS"),
-     "icon": "⚠️", "accent": COR_ABANDONO, "alert": _abandono_alto},
-    {"label": "Coinfecção HIV", "value": f"{fmt_dec(R['hiv_pct'])}%",
-     "sub": f"entre testados · cobertura {fmt_dec(R['hiv_cobertura'])}%",
-     "icon": "🧬", "accent": COR_HIV},
-    {"label": "Óbitos por TB (SINAN)", "value": fmt_int(R["obitos_tb"]),
-     "sub": f"{fmt_dec(R['taxa_obito'])}% dos encerrados",
-     "icon": "⚰️", "accent": COR_OBITO},
-])
+#: Os seis cards do RecifeTB numa faixa só, na ordem do pack.
+KPIS_FAIXA = pack.LAYOUT_KPI
 
-if F.filtros_de_perfil_ativos:
-    st.caption(
-        "ℹ️ Com filtros de perfil ativos, a **incidência** deixa de ser populacional: "
-        "o numerador é o subgrupo filtrado, mas o denominador continua sendo toda a "
-        "população residente (o IBGE não estratifica por essas variáveis)."
-    )
-
-st.divider()
-
-# Navegação por segmented control, não st.tabs.
-#
-# O painel de Recife usa abas, mas ele não tem filtros na sidebar. Aqui tem, e o
-# st.tabs traz dois problemas sérios nesse cenário:
-#   1. a aba selecionada volta para a primeira a cada rerun — ou seja, mexer em
-#      qualquer filtro jogaria o usuário de volta ao Mapa;
-#   2. o Streamlit executa o corpo de TODAS as abas em todo rerun, mesmo as
-#      invisíveis — 5 seções de consultas em vez de 1.
-# Com o segmented control só a seção ativa roda e a escolha sobrevive ao rerun.
-# É a mesma correção adotada no painel nacional (v3).
-_SECOES = [
-    "🗺️  Mapa", "📊  Epidemiologia", "👤  Perfil & Clínico",
-    "⚠️  Comorbidades", "🔬  Análise Livre",
-]
-secao = st.segmented_control("Seções", _SECOES, key="_secao",
-                             default=_SECOES[0], label_visibility="collapsed")
-st.write("")
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  1 · MAPA — três níveis geográficos (fragment: trocar nível não recarrega tudo)
-# ══════════════════════════════════════════════════════════════════════════════
-@st.fragment
-def secao_mapa(f: Filtros) -> None:
-    st.session_state.setdefault("_nivel", NIVEL_PADRAO)
-
-    # O clique no mapa é gravado numa chave própria e só depois copiado para a
-    # do selectbox: o Streamlit proíbe escrever na chave de um widget já criado
-    # no mesmo run, e o clique acontece DEPOIS que o selectbox foi desenhado.
-    if st.session_state.get("_unidade_clique"):
-        st.session_state["_unidade_sel"] = st.session_state.pop("_unidade_clique")
-
-    # ── Linha 1: os três botões de nível geográfico ───────────────────────────
-    st.caption("**Agregar o mapa por:**")
-    cols = st.columns([1.3, 1.3, 1.3, 3])
-    for col, (chave, cfg_botao) in zip(cols, NIVEIS_GEO.items()):
-        ativo = st.session_state["_nivel"] == chave
-        if col.button(f"{cfg_botao['icone']} {cfg_botao['rotulo']}", width="stretch",
-                      type="primary" if ativo else "secondary",
-                      key=f"btn_nivel_{chave}"):
-            st.session_state["_nivel"] = chave
-            # a unidade selecionada não existe no novo nível
-            st.session_state["_unidade_sel"] = "—"
-            st.rerun(scope="fragment")
-
-    nivel = st.session_state["_nivel"]
-    cfg = NIVEIS_GEO[nivel]
-
-    dados = indicadores.mapa(f, nivel)
-    com_casos = [d for d in dados if d["casos"]]
-
-    # ── Linha 2: métrica plotada e drill-down, ambos rotulados ────────────────
-    # Sem rótulo visível estas duas caixas viram adivinhação — uma controla a
-    # COR do mapa, a outra abre um painel de detalhe. São coisas bem diferentes.
-    c_metrica, c_detalhe, _ = st.columns([2, 2, 2])
-
-    rotulo_metrica = c_metrica.selectbox(
-        "Métrica do mapa", [m["rotulo"] for m in mapas.METRICAS.values()],
-        key="_metrica",
-        help="Define a cor do mapa e a ordenação do ranking ao lado.",
-    )
-    metrica = next(k for k, m in mapas.METRICAS.items()
-                   if m["rotulo"] == rotulo_metrica)
-
-    unidade = None
-    if nivel != "municipio":
-        opcoes = ["—"] + [d["nome"] for d in com_casos]
-        if st.session_state.get("_unidade_sel", "—") not in opcoes:
-            st.session_state["_unidade_sel"] = "—"
-        escolha = c_detalhe.selectbox(
-            f"Abrir detalhe de uma {cfg['rotulo'].lower()}", opcoes,
-            key="_unidade_sel",
-            help=("Abre um painel abaixo do mapa com os indicadores dessa unidade. "
-                  "Não altera o resto do painel — para restringir tudo (KPIs do topo, "
-                  "gráficos, outras seções) use os filtros da barra lateral."),
-        )
-        unidade = None if escolha == "—" else escolha
-
-    st.caption(
-        f"{len(com_casos)} de {len(dados)} {cfg['plural']} com notificação no recorte"
-        + (" · clique num polígono do mapa faz o mesmo que o seletor de detalhe"
-           if nivel != "municipio"
-           else " · o município é o nível mais fino da hierarquia")
-    )
-
-    # A altura vem da geometria do recorte (PE inteiro é largo e baixo; um
-    # município isolado é quase quadrado) — o ranking acompanha para as duas
-    # colunas terminarem na mesma linha.
-    altura = mapas.altura_sugerida(nivel, [d["id"] for d in dados])
-
-    col_mapa, col_rank = st.columns([3, 2])
-
-    with col_mapa:
-        fig = mapas.figura(dados, nivel, metrica, altura=altura)
-        evento = st.plotly_chart(
-            fig, width="stretch", config=PLOTLY_CFG,
-            on_select="rerun" if nivel != "municipio" else "ignore",
-            selection_mode="points", key=f"mapa_{nivel}_{metrica}",
-        )
-        if nivel != "municipio":
-            clicado = mapas.id_clicado(evento, dados)
-            if clicado and clicado != unidade:
-                st.session_state["_unidade_clique"] = clicado
-                st.rerun(scope="fragment")
-        # A legenda tem que descrever a escala REALMENTE usada — antes ela
-        # dizia "quantis" mesmo nas taxas, que são lineares.
-        st.caption(
-            ("Escala em quantis (a Região Metropolitana concentra a maior parte "
-             "dos casos, o que achataria uma escala linear)"
-             if mapas.usa_quantis(metrica)
-             else f"Escala linear · cinza = menos de {DENOMINADOR_MINIMO_TAXA} "
-                  "casos encerrados, taxa não exibida")
-            + " · contornos: SES-PE."
-        )
-
-    with col_rank:
-        st.markdown(f"**{rotulo_metrica} — ranking por {cfg['rotulo'].lower()}**")
-
-        # Taxa só entra no ranking com denominador suficiente. Sem isso, um
-        # município que encerrou 2 casos e curou os 2 lidera com "100%" acima
-        # de um que curou 180 de 200 — é ruído, não desempenho.
-        elegiveis = [d for d in com_casos if mapas.tem_base(d, metrica)]
-        excluidos = len(com_casos) - len(elegiveis)
-        top = sorted(elegiveis, key=lambda d: d[metrica], reverse=True)
-
-        # Cabem ~26 px por barra na altura do mapa; nos níveis de região e
-        # macro a lista inteira cabe, no de município mostramos o topo.
-        limite = min(len(top), max(6, altura // 26))
-        campo_den = mapas.METRICAS[metrica]["denominador"]
-        fmt_metrica = mapas.METRICAS[metrica]["formato"]
-        sufixo = mapas.METRICAS[metrica]["sufixo"]
-
-        if top:
-            st.plotly_chart(
-                graficos.bar_h(
-                    [{"label": d["nome"], "valor": d[metrica]} for d in top[:limite]],
-                    altura=altura,
-                    # mesma rampa do mapa ao lado, em degradê pela posição
-                    cores=mapas.cores_ranking(
-                        [d[metrica] for d in top[:limite]], metrica),
-                    # com denominador ao lado do número, dá para julgar o peso
-                    texto=[f"{fmt_metrica(d[metrica])}{sufixo}"
-                           + (f"  (n={fmt_int(d[campo_den])})" if campo_den else "")
-                           for d in top[:limite]],
-                ),
-                width="stretch", config=PLOTLY_CFG, key=f"rank_{nivel}_{metrica}",
-            )
-        else:
-            st.info(f"Nenhum(a) {cfg['rotulo'].lower()} com pelo menos "
-                    f"{DENOMINADOR_MINIMO_TAXA} casos encerrados neste recorte.")
-
-        legendas = []
-        if len(top) > limite:
-            legendas.append(f"Top {limite} de {len(top)}")
-        if excluidos:
-            legendas.append(
-                f"{excluidos} {cfg['plural']} fora do ranking e em cinza no mapa "
-                f"(menos de {DENOMINADOR_MINIMO_TAXA} casos encerrados — a taxa "
-                "seria ruído)"
-            )
-        if legendas:
-            st.caption(" · ".join(legendas) + ". Lista completa na tabela abaixo.")
-
-    if unidade:
-        st.divider()
-        _drill_down(f, nivel, unidade)
-
-    with st.expander(f"📋 Tabela — todos os {cfg['plural']} ({len(dados)})"):
-        st.dataframe(
-            [
-                {
-                    cfg["rotulo"]: d["nome"],
-                    "Casos": d["casos"],
-                    "Casos novos": d["novos"],
-                    "Incidência /100 mil": d["incidencia"],
-                    "Cura %": d["cura_pct"],
-                    "Abandono %": d["abandono_pct"],
-                    "Óbito TB %": d["obito_pct"],
-                    "HIV+ %": d["hiv_pct"],
-                }
-                for d in dados
-            ],
-            width="stretch", height=360, hide_index=True,
-        )
-
-
-def _drill_down(f: Filtros, nivel: str, unidade: str) -> None:
-    """O que há dentro do polígono clicado — um nível abaixo na hierarquia."""
-    d = indicadores.detalhe_unidade(f, nivel, unidade)
-    k = d["kpis"]
-
-    cab, fechar = st.columns([5, 1])
-    cab.subheader(f"📍 {unidade}")
-    cab.caption(f"{fmt_int(k['total'])} notificações · taxas de coorte sobre "
-                f"{fmt_int(k['encerrados'])} casos encerrados")
-    if fechar.button("✕ Fechar", key="fechar_unidade", width="stretch"):
-        st.session_state["_unidade_clique"] = "—"
-        st.rerun(scope="fragment")
-
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Cura", f"{fmt_dec(k['cura_pct'])}%", help="Meta OMS: ≥ 85%.")
-    m2.metric(("🔴" if k["abandono_pct"] >= META_ABANDONO_OMS else "🟢") + " Abandono",
-              f"{fmt_dec(k['abandono_pct'])}%", help="Meta OMS: < 5%.")
-    m3.metric("Óbito por TB", f"{fmt_dec(k['obito_pct'])}%",
-              help="Desfecho SINAN sobre casos encerrados.")
-    m4.metric("HIV+", f"{fmt_dec(k['hiv_pct'])}%", help="Entre os casos testados.")
-
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown(f"**Casos por {d['rotulo_filho']}**")
-        st.plotly_chart(
-            graficos.bar_h([{"label": x["nome"], "valor": x["casos"]}
-                            for x in d["filhos"][:15]],
-                           altura=max(280, min(len(d["filhos"]), 15) * 30),
-                           # mesmo degradê do ranking do mapa: é a mesma
-                           # métrica (casos) na mesma forma (ranking)
-                           cores=mapas.cores_ranking(
-                               [x["casos"] for x in d["filhos"][:15]], "casos")),
-            width="stretch", config=PLOTLY_CFG, key=f"drill_bar_{unidade}",
-        )
-    with c2:
-        st.markdown("**Série anual**")
-        st.plotly_chart(
-            graficos.anual(d["serie"], ano_destaque=max(f.anos)),
-            width="stretch", config=PLOTLY_CFG, key=f"drill_serie_{unidade}",
-        )
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  2 · EPIDEMIOLOGIA — incidência, coorte, sazonalidade, tendência
-# ══════════════════════════════════════════════════════════════════════════════
-def secao_epidemiologia(f: Filtros) -> None:
-    serie = indicadores.serie_incidencia(f)
-    coorte, encerrados = indicadores.coorte(f)
-
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("Incidência por 100 mil habitantes", help=(
-            "**Fonte:** SINAN-TB · **Numerador:** casos novos (Caso Novo + Não Sabe "
-            "+ Pós-óbito)  \n**Denominador:** população IBGE do recorte no ano  \n"
-            "**Cálculo:** coeficiente anual por 100 mil habitantes.  \n"
-            "*A série mostra todos os anos; os anos filtrados aparecem destacados.*"))
-        st.plotly_chart(graficos.linha_incidencia(serie, anos_destaque=f.anos),
-                        width="stretch", config=PLOTLY_CFG)
-    with c2:
-        st.subheader("Desfecho dos casos encerrados", help=(
-            "**Fonte:** SINAN-TB (situação de encerramento)  \n"
-            f"**Denominador:** {fmt_int(encerrados)} casos encerrados  \n"
-            "**Exclui:** transferidos e sem informação — não têm desfecho conhecido  \n"
-            "**Metodologia:** coorte (MS/OMS)."))
-        st.plotly_chart(graficos.barras_desfecho(coorte),
-                        width="stretch", config=PLOTLY_CFG)
-
-    st.divider()
-    c3, c4 = st.columns(2)
-    with c3:
-        st.subheader("Casos novos × retratamento por ano", help=(
-            "**Casos novos:** Caso Novo + Não Sabe + Pós-óbito  \n"
-            "**Retratamento:** Recidiva + Reingresso após abandono  \n"
-            "*Mantidos separados: têm dinâmicas e taxas de cura distintas.*"))
-        st.plotly_chart(graficos.barras_novos_retratamento(
-            indicadores.novos_vs_retratamento(f)),
-            width="stretch", config=PLOTLY_CFG)
-    with c4:
-        st.subheader("Mortalidade por 100 mil habitantes", help=(
-            "**Fonte:** desfecho de encerramento do SINAN (`Óbito por TB`).  \n"
-            "⚠️ Diferente do painel de Recife, aqui **não há linkage com o SIM** — "
-            "a mortalidade real tende a ser maior que a registrada no SINAN."))
-        st.plotly_chart(
-            graficos.linha_incidencia(serie, chave="mortalidade",
-                                      anos_destaque=f.anos, cor=COR_OBITO,
-                                      rotulo_numerador="óbitos por TB"),
-            width="stretch", config=PLOTLY_CFG)
-        st.caption(
-            "⚠️ A subida ao longo da série reflete sobretudo a melhora do "
-            "preenchimento do campo de encerramento no SINAN, não só aumento real "
-            "de mortalidade. Para a série oficial é preciso o linkage com o SIM."
-        )
-
-    st.divider()
-    t = indicadores.tendencia(f)
-    k = t["kpis"]
-
-    ka, kb, kc = st.columns(3)
-    if k["variacao_pct"] is None:
-        ka.metric("Tendência vs histórico", "➡️ Sem histórico")
-    else:
-        v = k["variacao_pct"]
-        rotulo = "⬆️ Para mais" if v > 5 else ("⬇️ Para menos" if v < -5 else "➡️ Estável")
-        ka.metric("Tendência vs histórico", rotulo,
-                  f"{v:+.1f}% vs {ANO_INICIO}–{t['ano'] - 1}", delta_color="inverse")
-    kb.metric(f"Total {t['ano']}", fmt_int(k["total_ano"]), "casos notificados",
-              delta_color="off")
-    kc.metric("Média anual histórica", fmt_int(k["media_anual_hist"]),
-              f"casos/ano · {ANO_INICIO}–{t['ano'] - 1}", delta_color="off")
-    if t["ano"] == ANO_PARCIAL:
-        st.caption(
-            f"⚠️ O ano de referência é {ANO_PARCIAL}, que ainda recebe notificações — "
-            "a comparação com a média histórica está subestimada. Para uma leitura "
-            f"fechada, tire {ANO_PARCIAL} do filtro de anos."
-        )
-
-    c5, c6 = st.columns(2)
-    with c5:
-        st.subheader(f"Casos por mês — {t['ano']} vs média histórica", help=(
-            "Barras acima da linha pontilhada indicam meses com mais casos "
-            "que o padrão histórico do recorte."))
-        st.plotly_chart(graficos.mensal(t["mensal"], t["ano"]),
-                        width="stretch", config=PLOTLY_CFG)
-    with c6:
-        st.subheader(f"Evolução anual — {ANO_INICIO}–{max(ANOS)}", help=(
-            "Total de notificações por ano; a barra vermelha destaca o ano "
-            "de referência (o mais recente entre os filtrados)."))
-        st.plotly_chart(graficos.anual(t["anual"], t["ano"]),
-                        width="stretch", config=PLOTLY_CFG)
-
-    st.divider()
-    st.subheader("Indicadores clínicos ao longo do tempo", help=(
-        "Séries calculadas sobre toda a base do recorte geográfico, "
-        "independentemente do filtro de anos. As linhas pontilhadas marcam "
-        "as metas da OMS quando o indicador correspondente está selecionado."))
-    sel = st.multiselect(
-        "Indicadores", options=list(t["indicadores"]["series"].keys()),
-        default=["Coinfecção HIV (%)", "Taxa de cura (%)", "Taxa de abandono (%)"],
-        label_visibility="collapsed",
-    )
-    if sel:
-        st.plotly_chart(graficos.indicadores(t["indicadores"], sel, t["ano"]),
-                        width="stretch", config=PLOTLY_CFG)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  3 · PERFIL & CLÍNICO
-# ══════════════════════════════════════════════════════════════════════════════
-def secao_perfil(f: Filtros) -> None:
-    p = indicadores.perfil(f)
-    c = indicadores.clinico(f)
-
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("Por sexo")
-        st.caption("Historicamente a TB afeta mais homens — em PE são ~2 casos "
-                   "masculinos para cada feminino.")
-        st.plotly_chart(graficos.donut(p["sexo"]), width="stretch", config=PLOTLY_CFG)
-    with c2:
-        st.subheader("Forma clínica")
-        st.caption("Pulmonar transmite pelo ar — maior risco de contágio. "
-                   "Extrapulmonar atinge outros órgãos.")
-        st.plotly_chart(graficos.donut(p["forma"]), width="stretch", config=PLOTLY_CFG)
-
-    c3, c4 = st.columns(2)
-    with c3:
-        st.subheader("Tipo de entrada")
-        st.caption("Caso novo: primeiro diagnóstico. Recidiva: adoeceu de novo após "
-                   "cura. Reingresso: voltou após abandono.")
-        st.plotly_chart(graficos.bar_h(p["tipo_entrada"]),
-                        width="stretch", config=PLOTLY_CFG)
-    with c4:
-        st.subheader("Por raça/cor")
-        st.caption("A TB afeta desproporcionalmente populações negras e indígenas.")
-        st.plotly_chart(graficos.bar_v(p["raca_cor"]),
-                        width="stretch", config=PLOTLY_CFG)
-
-    st.divider()
-    st.subheader("Desfecho × raça/cor", help=(
-        "Cada coluna soma 100%. Diferenças refletem desigualdades no acesso e na "
-        "qualidade do cuidado, não diferenças biológicas."))
-    st.plotly_chart(graficos.stacked100(p["desfecho_por_raca"]),
-                    width="stretch", config=PLOTLY_CFG)
-
-    st.divider()
-    pi1, pi2 = st.columns(2)
-    with pi1:
-        st.subheader("Pirâmide etária — casos")
-        st.caption("🟠 Faixas abaixo de 15 anos (público prioritário) destacadas.")
-        st.plotly_chart(graficos.piramide(p["piramide_casos"]),
-                        width="stretch", config=PLOTLY_CFG)
-    with pi2:
-        st.subheader("Pirâmide etária — óbitos por TB")
-        st.caption("Desfecho SINAN, por faixa etária e sexo.")
-        st.plotly_chart(graficos.piramide(p["piramide_obitos"]),
-                        width="stretch", config=PLOTLY_CFG)
-
-    st.divider()
-    d1, d2, d3 = st.columns(3)
-    with d1:
-        st.subheader("Status HIV")
-        st.plotly_chart(graficos.donut(c["status_hiv"]),
-                        width="stretch", config=PLOTLY_CFG)
-    with d2:
-        st.subheader("Baciloscopia — 1ª amostra")
-        st.plotly_chart(graficos.donut(c["baciloscopia"]),
-                        width="stretch", config=PLOTLY_CFG)
-    with d3:
-        st.subheader("Teste molecular (TRM-TB)")
-        st.plotly_chart(graficos.donut(c["teste_molecular"], max_cat=6),
-                        width="stretch", config=PLOTLY_CFG)
-
-    e1, e2 = st.columns([2, 3])
-    with e1:
-        st.subheader("Desfecho × status HIV")
-        st.caption("Cada coluna soma 100%. HIV+ tende a menor cura e maior óbito.")
-        st.plotly_chart(graficos.stacked100(c["desfecho_por_hiv"]),
-                        width="stretch", config=PLOTLY_CFG)
-    with e2:
-        st.subheader("Coinfecção TB-HIV por região de saúde")
-        st.caption("% de positivos entre os testados — não é quantidade absoluta.")
-        st.plotly_chart(graficos.coinfeccao_geo(c["coinfeccao_geo"]),
-                        width="stretch", config=PLOTLY_CFG)
-
-    st.divider()
-    st.subheader("Taxa de cura por tipo de entrada", help=(
-        "Coorte fechada. Denominador: casos encerrados. Meta OMS: ≥ 85% de cura."))
-    st.plotly_chart(
-        graficos.indicadores(c["coorte_por_tipo"], ["Caso novo", "Retratamento"]),
-        width="stretch", config=PLOTLY_CFG)
-
-    st.divider()
-    st.subheader("⏱️ Oportunidade do tratamento")
-    st.caption("Tempo entre diagnóstico e início do tratamento — começar em ≤7 dias "
-               "interrompe a cadeia de transmissão mais cedo.")
-    tt = c["tempo_tratamento"]
-    if tt is None:
-        st.info("Datas insuficientes para calcular o tempo de tratamento no recorte.")
-    else:
-        m1, m2, m3, m4 = st.columns(4)
-        mediana = tt["mediana_inicio"]
-        m1.metric("Início do tratamento (mediana)",
-                  f"{mediana:.0f} " + ("dia" if round(mediana) == 1 else "dias"),
-                  help=(f"Sobre {fmt_int(tt['n'])} casos com as duas datas válidas. "
-                        "Mediana 0 costuma significar que o SINAN registrou início "
-                        "= data do diagnóstico, não atendimento imediato."))
-        m2.metric("Início em ≤ 7 dias", f"{fmt_dec(tt['pct_ate_7d'])}%",
-                  help="Início oportuno.")
-        m3.metric("Início tardio (> 30 dias)", f"{fmt_dec(tt['pct_acima_30d'])}%",
-                  help="Atraso preocupante.")
-        if tt["duracao_mediana"] is not None:
-            m4.metric("Duração do tratamento (mediana)",
-                      f"{tt['duracao_mediana']:.0f} dias",
-                      help="Esquema básico esperado: ~180 dias.")
-        st.plotly_chart(graficos.hist_tempo(tt), width="stretch", config=PLOTLY_CFG)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  4 · COMORBIDADES & VULNERABILIDADES
-# ══════════════════════════════════════════════════════════════════════════════
-def secao_comorbidades(f: Filtros) -> None:
-    d = indicadores.comorbidades(f)
-
-    c1, c2 = st.columns([3, 2])
-    with c1:
-        st.subheader("Comorbidades associadas")
-        st.caption("Diabéticos têm risco ~3× maior de desenvolver TB. "
-                   "Percentual sobre o total filtrado.")
-        st.plotly_chart(
-            graficos.bar_h(d["agravos"], altura=360, cor=COR_HIV,
-                           pct_total=d["total"]),
-            width="stretch", config=PLOTLY_CFG)
-    with c2:
-        st.subheader("Populações vulneráveis")
-        st.caption("Situação de rua: risco até 56× maior. "
-                   "Privados de liberdade: até 28×.")
-        for p in d["populacoes"]:
-            st.metric(p["label"], fmt_int(p["valor"]),
-                      f"{fmt_dec(p['pct'])}% do total", delta_color="off")
-
-    st.divider()
-    st.subheader("Desfecho × populações vulneráveis", help=(
-        "Cada barra soma 100% dentro do seu grupo. Um mesmo caso pode pertencer a "
-        "mais de uma população, então as barras não somam o total de casos."))
-    if d["desfecho_por_vulneravel"]["categorias"]:
-        st.plotly_chart(graficos.stacked100(d["desfecho_por_vulneravel"]),
-                        width="stretch", config=PLOTLY_CFG)
-    else:
-        st.info("Nenhum caso em população vulnerável no recorte selecionado.")
-
-    st.divider()
-    st.subheader("Comorbidades por macrorregião de saúde")
-    st.caption("% de casos com cada comorbidade em cada macrorregião — "
-               "células mais quentes indicam maior concentração.")
-    st.plotly_chart(graficos.heatmap(d["heatmap"]),
-                    width="stretch", config=PLOTLY_CFG)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  5 · ANÁLISE LIVRE — Apache Superset de PE embutido
-# ══════════════════════════════════════════════════════════════════════════════
-def secao_analise_livre() -> None:
-    st.subheader("Análise livre no Apache Superset")
-    st.markdown(
-        "O **Apache Superset completo**, com os dados de Pernambuco já carregados. "
-        "Diferente das outras seções, aqui nada está pré-definido: monte o gráfico "
-        "que quiser, cruze as variáveis que quiser, rode SQL direto na base e salve "
-        "seus próprios dashboards — sem sair desta página."
-    )
-
-    raiz = url_segura(SUPERSET_URL)
-    if raiz is None:
-        st.error("`SUPERSET_URL` inválida — informe um endereço `http://` ou `https://`.")
-        return
-    if not raiz.endswith("/"):
-        raiz += "/"
-
-    # ── Para quem prefere trabalhar numa aba dedicada ─────────────────────────
-    #
-    # Só a raiz. Atalhos para Gráficos/Dashboards/SQL Lab/Conjuntos de dados
-    # existiram aqui e foram removidos: o Superset embutido logo abaixo já vem
-    # com a navegação dele completa, então eram um segundo menu para os mesmos
-    # destinos. Pior, apareciam antes do login e levavam a pessoa para fora da
-    # aba — justamente o que o fluxo de popup abaixo existe para evitar.
-    st.link_button("↗ Abrir em outra aba", raiz)
-
-    # ── O Superset, aqui dentro ───────────────────────────────────────────────
-    #
-    # O login é OAuth do GitHub, e o GitHub manda X-Frame-Options: DENY na tela
-    # de senha (proteção contra clickjacking). Ou seja: iframe está fora de
-    # questão para o login — mas POPUP não, porque é uma janela de navegador de
-    # verdade, com barra de endereço visível.
-    #
-    # Então o fluxo é: o quadro pergunta `/api/v1/me/` (mesma origem, cookie
-    # viaja junto); se não houver sessão, oferece um botão que abre o login em
-    # popup e fica observando até a sessão existir — aí fecha o popup e troca o
-    # conteúdo pelo Superset embutido. A pessoa nunca sai da Análise Livre e
-    # nunca vê um formulário do GitHub dentro de um quadro.
-    raiz_js = json.dumps(raiz)  # escapa aspas e barras com segurança
-    st.iframe(
-        """
-<div id="area" style="font-family:Inter,system-ui,sans-serif"></div>
-<script>
-const RAIZ = %s;
-// Endpoint que já inicia o OAuth: o popup vai DIRETO para o github.com, sem
-// passar pela tela de login do Superset. Um clique a menos.
-const LOGIN = RAIZ + 'login/github';
-const area = document.getElementById('area');
-let vigia = null, popup = null;
-
-const embutir = () => {
-  if (vigia) { clearInterval(vigia); vigia = null; }
-  try { if (popup && !popup.closed) popup.close(); } catch (e) {}
-  area.innerHTML = `<iframe src="${RAIZ}" width="100%%" height="900"
-      style="border:1px solid #d0d7de;border-radius:12px"
-      allow="fullscreen; clipboard-write"></iframe>`;
-};
-
-const temSessao = () =>
-  fetch(RAIZ + 'api/v1/me/', {credentials: 'include'})
-    .then(r => r.ok).catch(() => false);
-
-function convite(estado) {
-  area.innerHTML = `
-    <div style="border:1px dashed #d0d7de;border-radius:12px;padding:30px;
-                text-align:center;background:rgba(43,123,185,.04)">
-      <div style="font-size:32px;line-height:1">🔐</div>
-      <p style="font-weight:700;color:#1a3a5c;margin:.6rem 0 .2rem;font-size:1.05rem">
-        Entre para usar o Superset aqui dentro</p>
-      <p style="color:#57606a;font-size:.87rem;margin:0 0 1.1rem;max-width:48ch;
-                display:inline-block">
-        Abre uma janelinha do GitHub. Assim que você entrar, ela fecha sozinha e
-        o Superset carrega aqui mesmo, sem sair desta aba.</p><br>
-      <button id="entrar" style="background:#24292f;color:#fff;border:0;
-              padding:11px 22px;border-radius:8px;font-weight:700;
-              font-size:.92rem;cursor:pointer">Entrar com GitHub</button>
-      <p id="estado" style="color:#8b949e;font-size:.75rem;margin-top:1rem">${estado || ''}</p>
-    </div>`;
-
-  document.getElementById('entrar').onclick = () => {
-    const est = document.getElementById('estado');
-    popup = window.open(LOGIN, 'login_superset',
-                        'width=980,height=760,menubar=no,toolbar=no');
-    if (!popup) {   // navegador bloqueou o popup
-      est.innerHTML = `Seu navegador bloqueou a janela.
-        <a href="${LOGIN}" target="_blank" rel="noopener">Abrir em outra aba</a>
-        e voltar aqui também funciona.`;
-      return;
-    }
-    est.textContent = 'Aguardando o login na janelinha…';
-    // observa até a sessão aparecer; para sozinho se a janela for fechada
-    vigia = setInterval(async () => {
-      if (await temSessao()) return embutir();
-      if (popup.closed) {
-        clearInterval(vigia); vigia = null;
-        est.textContent = 'A janela foi fechada antes de concluir o login.';
-      }
-    }, 1500);
-  };
+ROTULO_RECORTE = {
+    "MUN": "Municípios",
+    "MACRO": "Macrorregiões",
+    "MICRO": "Regiões de saúde",
 }
 
-temSessao().then(ok => ok ? embutir() : convite(''));
-</script>
-"""
-        % raiz_js,
-        height=940,
+#: Nome da unidade listada, para o título do ranking dizer a verdade.
+UNIDADE_RECORTE = {
+    "MUN": "municípios",
+    "MACRO": "macrorregiões",
+    "MICRO": "regiões de saúde",
+}
+
+ROTULO_CLASSIFICACAO = {
+    "NATURAL": "Quebras naturais",
+    "QUARTIL": "Quintis",
+    "FIXA": "Escala fixa",
+}
+
+AJUDA_CLASSIFICACAO = """Como as cores repartem os valores.
+
+**Quebras naturais** agrupam municípios parecidos e separam os diferentes.
+
+**Quintis** põem um quinto dos municípios em cada cor. Fácil de explicar, mas a régua muda a cada ano.
+
+**Escala fixa** usa cortes ancorados em referências conhecidas — para a incidência, metade do Brasil (20), o Brasil (40), Pernambuco (55) e o dobro de Pernambuco (110 por 100 mil); para a cura, a meta de 85% da OMS. É a única que deixa dois anos comparáveis."""
+
+TODO_O_ESTADO = "— todo o estado —"
+
+#: Altura do mapa. A coluna da direita empilha o canal e a epicurva; o mapa
+#: precisa fechar na mesma altura.
+ALTURA_MAPA = 640
+ALTURA_LINHA_1 = ALTURA_MAPA
+
+MESES = (
+    "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+    "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+)
+
+
+# ---------------------------------------------------------------------------
+# Cache — só valores primitivos como chave, nunca `Escopo` nem `Navegacao`.
+# ---------------------------------------------------------------------------
+
+TTL_DADOS = 24 * 3600
+
+
+def _escopo(ano: int, nivel: str, mun: str | None, macro: str | None, micro: str | None) -> Escopo:
+    """Escopo do recorte corrente, região de saúde e macro inclusive.
+
+    Município aberto manda sobre a região; região sobre a macro; macro sobre
+    o estado. É o que faz cards, evolução, pirâmide e composição responderem
+    ao clique no mapa — o painel de origem só muda dois cards.
+    """
+    if nivel == "MUN":
+        return Escopo(pack.DOENCA, ano, "MUN", uf=UF_FIXA, mun=mun)
+    if micro:
+        muns = recortes.municipios_de(micro=micro, uf=UF_FIXA)
+    elif macro:
+        muns = recortes.municipios_de(macro=macro, uf=UF_FIXA)
+    else:
+        muns = None
+    return Escopo(pack.DOENCA, ano, "UF", uf=UF_FIXA, municipios=tuple(muns) if muns else None)
+
+
+@st.cache_resource
+def _anos() -> list[int]:
+    return leitura.anos_disponiveis(pack.DOENCA)
+
+
+@st.cache_data(ttl=TTL_DADOS, show_spinner=False)
+def _kpis(ano: int, nivel: str, mun: str | None, macro: str | None, micro: str | None):
+    """KPIs do recorte corrente — e o recorte inclui macro e região de saúde.
+
+    Os seis cards saem da mesma soma municipal quando há região: os leitores
+    honram `Escopo.municipios`. Município aberto manda sobre a região; região
+    sobre o estado.
+    """
+    return calc.calcular(_escopo(ano, nivel, mun, macro, micro))
+
+
+@st.cache_data(ttl=TTL_DADOS, show_spinner=False)
+def _camada(recorte: str, mun: str | None, detalhe: bool, micro: str | None, macro: str | None):
+    """Geometria a desenhar: municípios, macrorregiões ou regiões de saúde."""
+    uf = UF_FIXA
+    if recorte == "MACRO":
+        return geo.regioes(uf, "macro")
+    if recorte == "MICRO":
+        camada = geo.regioes(uf, "micro")
+        # Dentro de uma macro só as regiões de saúde dela, como na origem.
+        if macro:
+            dentro = {recortes._chave(m) for m in recortes.micros(macro, uf=uf)}
+            parte = camada[camada["regiao"].map(recortes._chave).isin(dentro)]
+            if not parte.empty:
+                return parte
+        return camada
+
+    municipios = geo.municipios(uf)
+    if detalhe and mun:
+        return municipios[municipios["cod_mun6"] == mun]
+    if micro:
+        dentro = set(recortes.municipios_de(micro=micro, uf=uf))
+        parte = municipios[municipios["cod_mun6"].isin(dentro)]
+        if not parte.empty:
+            return parte
+    return municipios
+
+
+@st.cache_data(ttl=TTL_DADOS, show_spinner=False)
+def _geojson(recorte, mun, detalhe, micro, macro):
+    return mapa.geometrias_geojson(_camada(recorte, mun, detalhe, micro, macro))
+
+
+@st.cache_data(ttl=TTL_DADOS, show_spinner=False)
+def _valores_mapa(ano: int, metrica: str, recorte: str, macro: str | None) -> pd.Series:
+    escopo = Escopo(pack.DOENCA, ano, "UF", uf=UF_FIXA)
+    if recorte in ("MACRO", "MICRO"):
+        return leitura.valores_por_regiao(
+            escopo, metrica, "macro" if recorte == "MACRO" else "micro", macro=macro
+        )
+    return leitura.valores_por_geografia(escopo, metrica)
+
+
+#: Linhas do tooltip do mapa, como no painel de origem: casos, curas e
+#: população, cada uma na cor da métrica. A métrica pintada não repete.
+_COMPONENTES_TOOLTIP = (("casos", 0), ("cura", 0), ("pop", 0))
+
+
+@st.cache_data(ttl=TTL_DADOS, show_spinner=False)
+def _detalhes_tooltip(ano: int, metrica: str, recorte: str, macro: str | None):
+    return [
+        (pack.rotulo(m), _valores_mapa(ano, m, recorte, macro), pack.cor(m), casas)
+        for m, casas in _COMPONENTES_TOOLTIP
+        if m != metrica
+    ]
+
+
+@st.cache_data(ttl=TTL_DADOS, show_spinner=False)
+def _ranking(ano: int, metrica: str, top_n: int, recorte: str, macro: str | None):
+    return leitura.ranking(
+        Escopo(pack.DOENCA, ano, "UF", uf=UF_FIXA), metrica, top_n, recorte, macro=macro
     )
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  RENDER
-# ══════════════════════════════════════════════════════════════════════════════
-if secao == _SECOES[1]:
-    secao_epidemiologia(F)
-elif secao == _SECOES[2]:
-    secao_perfil(F)
-elif secao == _SECOES[3]:
-    secao_comorbidades(F)
-elif secao == _SECOES[4]:
-    secao_analise_livre()
-else:
-    secao_mapa(F)
+@st.cache_data(ttl=TTL_DADOS, show_spinner=False)
+def _canal(ano: int, nivel: str, mun: str | None, macro, micro):
+    return canal.montar(_escopo(ano, nivel, mun, macro, micro))
 
-styles.footer()
+
+@st.cache_data(ttl=TTL_DADOS, show_spinner=False)
+def _epicurva(ano: int, nivel: str, mun: str | None, macro, micro) -> pd.DataFrame:
+    return canal.epicurva(_escopo(ano, nivel, mun, macro, micro))
+
+
+@st.cache_data(ttl=TTL_DADOS, show_spinner=False)
+def _serie_anual(nivel: str, mun: str | None, macro, micro, metrica: str) -> pd.DataFrame:
+    return leitura.serie_anual(_escopo(_anos()[-1], nivel, mun, macro, micro), metrica)
+
+
+@st.cache_data(ttl=TTL_DADOS, show_spinner=False)
+def _piramide(ano: int, nivel: str, mun: str | None, macro, micro) -> pd.DataFrame:
+    return leitura.piramide_completa(_escopo(ano, nivel, mun, macro, micro), "CASOS")
+
+
+@st.cache_data(ttl=TTL_DADOS, show_spinner=False)
+def _composicao(ano: int, nivel: str, mun: str | None, macro, micro, variavel: str) -> pd.DataFrame:
+    return leitura.composicao(
+        _escopo(ano, nivel, mun, macro, micro),
+        variavel,
+        rotulos=pack.ROTULOS_VALORES.get(variavel),
+        numerica=variavel in pack.VARIAVEIS_NUMERICAS,
+    )
+
+
+@st.cache_data(ttl=TTL_DADOS)
+def _meses_com_dado(ano: int) -> int:
+    return leitura.meses_com_dado(pack.DOENCA, ano)
+
+
+@st.cache_data(ttl=TTL_DADOS)
+def _municipios() -> dict[str, str]:
+    """Código de 6 dígitos → nome."""
+    camada = geo.municipios(UF_FIXA)
+    return dict(zip(camada["cod_mun6"], camada["nome_mun"], strict=True))
+
+
+# ---------------------------------------------------------------------------
+# Estado
+# ---------------------------------------------------------------------------
+
+def _ano_inicial() -> int:
+    """O ano mais recente **fechado** — o último com 12 meses no `_cache_ts`.
+
+    Abrir no ano corrente mostrava 96 casos e incidência 1,00 para PE, com um
+    aviso de "incompleto" que o visitante lê depois do número. O ano parcial
+    continua no seletor; só não é a primeira tela.
+    """
+    for ano in reversed(_anos()):
+        if _meses_com_dado(ano) >= 12:
+            return ano
+    return _anos()[-1]
+
+
+if "nav" not in st.session_state:
+    st.session_state.nav = Navegacao(doenca=pack.DOENCA, ano=_ano_inicial())
+nav: Navegacao = st.session_state.nav
+
+st.markdown(ui.css_base(), unsafe_allow_html=True)
+st.markdown(ui.css_layout(), unsafe_allow_html=True)
+st.markdown(
+    f"<style>:root{{--intro-accent:{pack.CORES['primary']};}}</style>",
+    unsafe_allow_html=True,
+)
+
+
+def _local() -> str:
+    """Nome do recorte corrente, para subtítulo de card."""
+    if nav.nivel == "MUN":
+        return nav.nome_mun or nav.mun or "PE"
+    if nav.micro:
+        return f"RS {nav.micro}"
+    if nav.macro:
+        return nav.macro
+    return "PE"
+
+
+# ---------------------------------------------------------------------------
+# Cabeçalho e faixa de KPIs
+# ---------------------------------------------------------------------------
+
+st.markdown(
+    ui.faixa_intro(
+        f"Painel de Monitoramento da {pack.TITULO} de PE",
+        escopo=nav.trilha(),
+        cor=pack.CORES["primary"],
+    ),
+    unsafe_allow_html=True,
+)
+
+# Ano parcial se **detecta** pelos meses com dado, não se presume.
+if (meses := _meses_com_dado(nav.ano)) < 12:
+    st.warning(
+        f"**{nav.ano} está incompleto** — dado até "
+        f"{MESES[meses - 1] if meses else '—'} ({meses} de 12 meses). "
+        f"Não compare o total com anos fechados.",
+        icon=":material/schedule:",
+    )
+
+
+def _card(metrica: str, atual, anterior) -> None:
+    """Um card de KPI. Realça a métrica ativa do mapa, como na origem, e as
+    proporções trazem a fração de onde saem sob o valor."""
+    valor = getattr(atual, metrica, None)
+    antes = getattr(anterior, metrica, None) if anterior else None
+    taxa = metrica in pack.TAXAS
+    sub = f"{_local()} • {nav.ano}"
+    if fracao := pack.FRACAO_KPI.get(metrica):
+        num, den = (getattr(atual, campo, None) for campo in fracao)
+        if num is not None and den:
+            sub += f" • {ui.formatar_inteiro(num)} de {ui.formatar_inteiro(den)}"
+    st.markdown(
+        ui.kpi_card(
+            pack.rotulo_curto(metrica),
+            ui.formatar_decimal(valor) if taxa else ui.formatar_inteiro(valor),
+            cor=pack.cor(metrica),
+            subtitulo=sub,
+            selecionado=metrica == nav.metrica,
+            badge_delta=ui.delta(
+                valor, antes, taxa=taxa, bom_se_cai=metrica in pack.BOM_SE_CAI
+            ),
+            ajuda=" — ".join(
+                parte for parte in (pack.rotulo(metrica), pack.descricao(metrica)) if parte
+            ),
+            icone=pack.icone(metrica),
+        ),
+        unsafe_allow_html=True,
+    )
+
+
+atual = anterior = None
+with resiliencia.painel("Indicadores"):
+    atual = _kpis(nav.ano, nav.nivel, nav.mun, nav.macro, nav.micro)
+    anterior = (
+        _kpis(nav.ano - 1, nav.nivel, nav.mun, nav.macro, nav.micro)
+        if nav.ano > min(_anos()) else None
+    )
+    for coluna, metrica in zip(st.columns(len(KPIS_FAIXA)), KPIS_FAIXA, strict=True):
+        with coluna:
+            _card(metrica, atual, anterior)
+
+
+# ---------------------------------------------------------------------------
+# Linha 1: mapa à esquerda, abas à direita
+# ---------------------------------------------------------------------------
+
+# Os controles numa faixa própria, acima das duas colunas — como no RecifeTB.
+# Dentro da coluna do mapa eles comiam um terço da altura e quebravam em três
+# linhas; numa faixa de largura inteira cabem os cinco lado a lado.
+with resiliencia.painel("Controles"), st.container(border=True, key="cartao-controles"):
+    col_ano, col_metrica, col_recorte, col_cores, col_busca = st.columns(
+        [1.1, 4.2, 3.2, 3.2, 2.3], vertical_alignment="top"
+    )
+    with col_ano:
+        escolhido = st.selectbox("Ano", _anos(), index=_anos().index(nav.ano), key="ano")
+        if escolhido != nav.ano:
+            nav.ano = escolhido
+            st.rerun()
+    with col_metrica:
+        nav.metrica = st.segmented_control(
+            "Métrica",
+            pack.METRICAS_MAPA,
+            format_func=pack.rotulo_curto,
+            default=nav.metrica,
+            help="Define o que o mapa pinta e o que o ranking ordena.",
+        ) or nav.metrica
+    with col_recorte:
+        # **Sem `key`**: o clique no mapa também move o recorte, e um widget
+        # dono do valor entraria em laço com a navegação.
+        recorte = st.segmented_control(
+            "Nível do mapa",
+            RECORTES,
+            format_func=lambda r: ROTULO_RECORTE[r],
+            default=nav.recorte,
+            help="Municípios, ou agregado por macrorregião e região de saúde.",
+        )
+        if recorte and recorte != nav.recorte:
+            nav.definir_recorte(recorte)
+            st.rerun()
+    with col_cores:
+        classificacao = st.segmented_control(
+            "Cores",
+            mapa.CLASSIFICACOES,
+            format_func=lambda c: ROTULO_CLASSIFICACAO[c],
+            default=st.session_state.get("classificacao", "FIXA"),
+            help=AJUDA_CLASSIFICACAO,
+        )
+        if classificacao:
+            st.session_state["classificacao"] = classificacao
+        classificacao = st.session_state.get("classificacao", "FIXA")
+    with col_busca:
+        nomes = _municipios()
+        opcoes = [TODO_O_ESTADO, *sorted(nomes, key=lambda c: nomes[c])]
+        selecionado = nav.mun if nav.mun in nomes else None
+        municipio = st.selectbox(
+            "Buscar município",
+            opcoes,
+            index=0 if selecionado is None else opcoes.index(selecionado),
+            format_func=lambda c: c if c == TODO_O_ESTADO else nomes[c],
+        )
+        if municipio == TODO_O_ESTADO:
+            if nav.nivel == "MUN":
+                nav.voltar()
+                st.rerun()
+        elif municipio != nav.mun:
+            nav.entrar_municipio(municipio, nome=nomes[municipio])
+            st.rerun()
+
+
+esquerda, direita = st.columns([5, 6], gap="medium")
+
+with esquerda:
+    with resiliencia.painel("Mapa"), st.container(border=True, key="cartao-mapa"):
+        recorte_mapa = nav.recorte
+        serie_mapa = _valores_mapa(nav.ano, nav.metrica, recorte_mapa, nav.macro)
+        camada = _camada(recorte_mapa, nav.mun, nav.detalhe, nav.micro, nav.macro)
+        chave = "regiao" if recorte_mapa in ("MACRO", "MICRO") else "cod_mun6"
+
+        if serie_mapa.dropna().empty:
+            st.markdown(
+                ui.painel_vazio("Mapa", "Sem dado para este recorte.", mapa=True),
+                unsafe_allow_html=True,
+            )
+        else:
+            desenho, escala = mapa.deck(
+                camada,
+                serie_mapa,
+                chave=chave,
+                rampa=pack.rampa_mapa(nav.metrica),
+                rotulo_metrica=pack.rotulo(nav.metrica),
+                coluna_nome="regiao" if chave == "regiao" else "nome_mun",
+                decimais=1 if nav.metrica in pack.TAXAS else 0,
+                altura=ALTURA_MAPA,
+                geometrias=_geojson(recorte_mapa, nav.mun, nav.detalhe, nav.micro, nav.macro),
+                destacado=nav.destacado or (nav.mun if nav.nivel == "MUN" and not nav.detalhe else None),
+                metodo=classificacao,
+                cortes_fixos=pack.cortes_fixos(nav.metrica),
+                detalhes=_detalhes_tooltip(nav.ano, nav.metrica, recorte_mapa, nav.macro),
+            )
+            evento = st.pydeck_chart(
+                desenho,
+                width="stretch",
+                height=ALTURA_MAPA,
+                on_select="rerun",
+                selection_mode="single-object",
+                key=(
+                    f"mapa-{recorte_mapa}-{nav.macro or ''}-{nav.micro or ''}-{nav.mun or ''}"
+                    f"-{'det' if nav.detalhe else ''}-{nav.ano}-{nav.metrica}-{classificacao}"
+                ),
+            )
+            st.components.v1.html(ui.script_travar_zoom(), height=0)
+            # O N de cada classe vai na própria legenda. O painel de origem
+            # tem uma segunda caixa, "regiões por classe", que repete as faixas
+            # só para acrescentar a contagem — em quintis ela é sempre 37, e
+            # em endemicidade é onde o número diz algo ("9 hiperendêmicos").
+            contagem = mapa.classificar(serie_mapa, escala).value_counts()
+            st.markdown(
+                mapa.legenda(
+                    escala,
+                    pack.rotulo(nav.metrica),
+                    contagem=contagem,
+                    nomes=pack.nomes_fixos(nav.metrica) if classificacao == "FIXA" else None,
+                ),
+                unsafe_allow_html=True,
+            )
+
+            alvo = mapa.alvo_do_clique(evento)
+            if alvo:
+                if recorte_mapa == "MACRO" and alvo != nav.macro:
+                    nav.entrar_macro(alvo)
+                    st.rerun()
+                elif recorte_mapa == "MICRO" and alvo != nav.micro:
+                    nav.entrar_micro(alvo)
+                    st.rerun()
+                elif recorte_mapa == "MUN":
+                    if alvo == nav.mun and not nav.detalhe:
+                        nav.abrir_detalhe()
+                        st.rerun()
+                    elif alvo != nav.mun and alvo in nomes:
+                        nav.entrar_municipio(alvo, nome=nomes[alvo])
+                        st.rerun()
+
+        if nav.pode_voltar:
+            b1, b2 = st.columns(2)
+            if b1.button("◀ Voltar", key="voltar"):
+                nav.voltar()
+                st.rerun()
+            if b2.button("Ver Pernambuco inteiro", key="voltar_pe"):
+                nav.reset()
+                st.rerun()
+
+
+with direita:
+    with st.container(border=True, key="cartao-graficos"):
+        aba_evolucao, aba_ranking, aba_piramide = st.tabs(
+            ["Evolução temporal", f"Ranking de {UNIDADE_RECORTE[nav.recorte]}", "Pirâmide etária"]
+        )
+
+        with aba_evolucao, resiliencia.painel("Evolução temporal"):
+            horizonte = st.radio(
+                "Horizonte", ["Meses do ano", "Todos os anos"],
+                horizontal=True, label_visibility="collapsed",
+            )
+
+            if horizonte == "Meses do ano":
+                canal_atual = _canal(nav.ano, nav.nivel, nav.mun, nav.macro, nav.micro)
+                figura = graficos.canal_endemico(
+                    canal_atual,
+                    rotulo=pack.rotulo("incid"),
+                    cor=pack.cor("incid"),
+                    altura=ALTURA_LINHA_1 - 200,
+                )
+                titulo_serie = "Canal endêmico"
+                rodape = ""
+                if canal_atual.anos:
+                    fora = canal.meses_fora_da_faixa(canal_atual)
+                    acima = int((fora["posicao"] == "acima").sum())
+                    rodape = graficos.AVISO_CANAL.format(
+                        n=len(canal_atual.anos),
+                        anos=", ".join(str(a) for a in canal_atual.anos),
+                    )
+                    if acima:
+                        rodape += f" Em {nav.ano}, **{acima} de 12 meses** ficaram acima do topo da faixa."
+            else:
+                serie = _serie_anual(nav.nivel, nav.mun, nav.macro, nav.micro, "incid")
+                figura = graficos.evolucao_anual(
+                    serie, rotulo=pack.rotulo("incid"), cor=pack.cor("incid"),
+                    altura=ALTURA_LINHA_1 - 200, ano=nav.ano,
+                )
+                titulo_serie = "Incidência por ano"
+                rodape = ""
+            st.markdown(ui.titulo_painel(titulo_serie, ajuda=rodape), unsafe_allow_html=True)
+            st.altair_chart(figura, width="stretch")
+
+            st.markdown(ui.titulo_painel("Epicurva por mês"), unsafe_allow_html=True)
+            st.altair_chart(
+                graficos.epicurva(
+                    _epicurva(nav.ano, nav.nivel, nav.mun, nav.macro, nav.micro),
+                    rotulo="Casos", cor=pack.cor("casos"), ano_em_foco=nav.ano,
+                ),
+                width="stretch",
+            )
+
+        with aba_ranking, resiliencia.painel("Ranking"):
+            maximo = {"MUN": 30, "MACRO": 4, "MICRO": 12}[nav.recorte]
+            top_n = (
+                st.slider("Quantos exibir", 5, maximo, min(15, maximo), step=5, key=f"top_n_{nav.recorte}")
+                if maximo > 5 else maximo
+            )
+            tabela = _ranking(nav.ano, nav.metrica, top_n, nav.recorte, nav.macro)
+            escala_mapa = mapa.escala(
+                _valores_mapa(nav.ano, nav.metrica, nav.recorte, nav.macro),
+                pack.rampa_mapa(nav.metrica),
+                metodo=classificacao,
+                cortes_fixos=pack.cortes_fixos(nav.metrica),
+                decimais=1 if nav.metrica in pack.TAXAS else 0,
+            )
+            escolha = alt.selection_point(name="barra", fields=["chave"], on="click")
+            evento_rank = st.altair_chart(
+                graficos.ranking(
+                    tabela,
+                    rotulo=pack.rotulo(nav.metrica),
+                    cor=pack.cor(nav.metrica),
+                    selecao=escolha,
+                    altura_minima=ALTURA_LINHA_1 - 200,
+                    escala=escala_mapa,
+                ),
+                width="stretch",
+                on_select="rerun",
+                key=f"rank-{nav.ano}-{nav.metrica}-{nav.recorte}-{nav.macro or ''}-{classificacao}-{top_n}",
+            )
+            if clicado := graficos.alvo_do_clique(evento_rank, "barra"):
+                if nav.recorte == "MACRO" and clicado != nav.macro:
+                    nav.entrar_macro(clicado)
+                    st.rerun()
+                elif nav.recorte == "MICRO" and clicado != nav.micro:
+                    nav.entrar_micro(clicado)
+                    st.rerun()
+                elif nav.recorte == "MUN" and clicado != nav.destacado:
+                    nav.destacar(clicado, nome=_municipios().get(clicado))
+                    st.rerun()
+
+        with aba_piramide, resiliencia.painel("Pirâmide etária"):
+            dados_pir = _piramide(nav.ano, nav.nivel, nav.mun, nav.macro, nav.micro)
+            por_100mil = st.toggle(
+                "Por 100 mil habitantes",
+                help="Desconta o tamanho de cada faixa etária na população.",
+            )
+            st.altair_chart(
+                graficos.piramide(
+                    dados_pir, rotulo="Casos", por_100mil=por_100mil,
+                    altura=ALTURA_LINHA_1 - 160,
+                ),
+                width="stretch",
+            )
+
+
+# ---------------------------------------------------------------------------
+# Linha 2: tópicos de interesse
+# ---------------------------------------------------------------------------
+
+TOPICOS_POR_LINHA = 2
+ALTURA_MINIMA_TOPICO = 175
+LARGURA_ROTULO_TOPICO = 150
+
+AJUDA_TOPICOS = (
+    "Distribuição de cada variável da ficha de tuberculose no recorte corrente. "
+    "As dez que abrem são as que a vigilância olha primeiro; as demais estão "
+    "no seletor. Abaixo de cinco registros o percentual não é publicável e só "
+    "a contagem aparece."
+)
+
+
+def _desenhar_topico(variavel: str, rotulo: str, altura: int) -> None:
+    dados = _composicao(nav.ano, nav.nivel, nav.mun, nav.macro, nav.micro, variavel)
+    st.altair_chart(
+        graficos.composicao(
+            dados,
+            rotulo=rotulo,
+            cor=pack.cor("casos"),
+            altura=altura,
+            largura_rotulo=LARGURA_ROTULO_TOPICO,
+            ordem_dos_dados=variavel in pack.VARIAVEIS_NUMERICAS,
+        ),
+        width="stretch",
+    )
+    if not dados.empty and dados["pct"].isna().all():
+        st.caption(
+            f"Base de {int(dados['total'].iloc[0])} registros — pequena demais "
+            f"para percentual. Só a contagem aparece."
+        )
+
+
+with resiliencia.painel("Tópicos de interesse"), st.container(border=True, key="cartao-composicao"):
+    st.markdown(ui.titulo_painel("Tópicos de interesse", ajuda=AJUDA_TOPICOS), unsafe_allow_html=True)
+    planas = pack.variaveis_planas()
+    escolhidas = st.multiselect(
+        "Variáveis",
+        list(planas),
+        default=list(pack.VARIAVEIS_DESTAQUE),
+        format_func=lambda v: planas[v],
+        label_visibility="collapsed",
+        placeholder="Escolha as variáveis a exibir",
+    )
+    if not escolhidas:
+        st.caption("Nenhuma variável escolhida. Use o campo acima para trazer as que interessam.")
+    else:
+        for inicio in range(0, len(escolhidas), TOPICOS_POR_LINHA):
+            linha = escolhidas[inicio : inicio + TOPICOS_POR_LINHA]
+            altura = max(
+                graficos.altura_composicao(len(_composicao(nav.ano, nav.nivel, nav.mun, nav.macro, nav.micro, v)))
+                for v in linha
+            )
+            altura = max(altura, ALTURA_MINIMA_TOPICO)
+            for coluna, variavel in zip(st.columns(TOPICOS_POR_LINHA, gap="medium"), linha, strict=False):
+                with coluna:
+                    _desenhar_topico(variavel, planas[variavel], altura)
+
+
+st.caption(
+    f"Fonte: Sinan/Ministério da Saúde; população IBGE. Recorte por município de "
+    f"residência. Série exibida: {_anos()[0]}–{_anos()[-1]}. Dados preliminares, "
+    f"sujeitos a alteração — o Sinan é atualizado retroativamente.  \n"
+    f"O painel de monitoramento da tuberculose do Recife da equipe parceira, "
+    f"ampliado para o estado. Como cada número é calculado, e onde difere do "
+    f"Ministério da Saúde: docs/metodologia.md e docs/contrato-dados.md."
+)

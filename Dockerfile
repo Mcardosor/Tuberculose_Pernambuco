@@ -1,31 +1,45 @@
-FROM python:3.11-slim
+# Imagem do painel de tuberculose de PE. Segue o padrão dos irmãos da família Cenários+ — mesma
+# base, mesmo healthcheck, mesmo jeito de subir —, com uma diferença: os dados
+# entram por volume e não por `COPY`. São 209 MB que mudam por extração nova,
+# não por commit; dentro da imagem, trocar o dado exigiria rebuild.
+FROM python:3.13-slim
 
 WORKDIR /app
 
-# Dependências Python primeiro, para aproveitar cache de layer.
-# Instala do lock (versões exatas), não do requirements.txt (faixas) — sem
-# isso, dois builds do mesmo commit podem subir versões diferentes.
+# Dependências de sistema:
+#   curl     → healthcheck
+#   libgomp1 → DuckDB usa OpenMP para paralelizar
+# geopandas não precisa de GDAL do sistema: pyogrio, shapely e pyproj trazem
+# GDAL, GEOS e PROJ nas próprias wheels.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Do lock, não do requirements.txt: aquele declara faixas (`streamlit>=1.40`) e
+# dois builds do mesmo commit poderiam subir versões diferentes. O lock tem as
+# versões exatas com que a suíte passa.
 COPY requirements.lock.txt .
 RUN pip install --no-cache-dir -r requirements.lock.txt
 
 COPY app.py .
 COPY src/ src/
-# Fixa o tema em claro — sem isso o Streamlit segue o prefers-color-scheme de
-# quem acessa e mistura widgets escuros com o nosso fundo claro.
+COPY assets/ assets/
 COPY .streamlit/ .streamlit/
-
-# Os dados (parquets, geojsons, agregados) entram por volume em produção —
-# são gerados pelo ETL e não pertencem à imagem. Ver docker-compose.yml.
 
 EXPOSE 8501
 
+# O caminho do healthcheck inclui o subcaminho: sob `baseUrlPath`, o Streamlit
+# serve `/cenarios/tbpe/_stcore/health` e a raiz responde 404. O painel irmão
+# de Recife ficou meses com healthcheck vermelho por causa disso.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8501/cenarios/tbpe/_stcore/health')"
+    CMD curl --fail http://localhost:8501/cenarios/tbpe/_stcore/health || exit 1
 
-CMD ["python", "-m", "streamlit", "run", "app.py", \
-     "--server.port=8501", \
-     "--server.address=0.0.0.0", \
-     "--server.headless=true", \
-     "--server.baseUrlPath=cenarios/tbpe", \
-     "--server.fileWatcherType=none", \
-     "--browser.gatherUsageStats=false"]
+ENTRYPOINT ["streamlit", "run", "app.py", \
+    "--server.port=8501", \
+    "--server.address=0.0.0.0", \
+    "--server.baseUrlPath=cenarios/tbpe", \
+    "--server.headless=true", \
+    "--server.enableCORS=false", \
+    "--server.enableXsrfProtection=true", \
+    "--browser.gatherUsageStats=false"]

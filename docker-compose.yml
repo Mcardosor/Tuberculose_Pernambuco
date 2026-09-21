@@ -1,21 +1,46 @@
+# Painel de tuberculose de Pernambuco — `tbpe`.
+#
+# Hospedagem nossa, na VM (`/cenarios/tbpe/`), como o sinan e o hansepe: os
+# dados são montados como volume de `../sinan/data` (a mesma extração que
+# serve o painel nacional), não copiados para a imagem.
+#
+# Substitui o container da geração anterior (Superset + `dados_dashboard/`),
+# que ocupava o mesmo caminho e a mesma porta: pare aquele antes de subir
+# este — `docs/deploy.md`.
 services:
-  dashboard-tb-pernambuco:
+  dashboard:
     build: .
-    container_name: dashboard-tb-pernambuco
+    image: tbpe:latest
+    container_name: tbpe
     restart: unless-stopped
     ports:
-      # 8501 demográfico · 8502 TB nacional · 8503 Recife · 8505 hanseníase
-      # · 8506 Superset — 8504 estava livre
-      - "8504:8501"
-    volumes:
-      - ./dados_dashboard:/app/dados_dashboard:ro
+      # 8504 era a do tbpe antigo, que este substitui no mesmo caminho.
+      - 8504:8501
     environment:
-      # RAIZ da aplicação Superset, não um dashboard específico: a Análise Livre
-      # entrega o Superset inteiro (SQL Lab, criação de gráficos, datasets) para
-      # quem quiser explorar por conta própria.
-      - SUPERSET_URL=https://painel.cenarios.unb.br/cenarios/superset/
+      - PYTHONUNBUFFERED=1
+      - SINAN_DATA_DIR=/app/data
+      - SINAN_DOENCA=tuberculose
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+    volumes:
+      # Código montado do repositório: `git pull` + restart aplica mudança sem
+      # rebuild. A imagem já tem uma cópia, então o container sobe mesmo se o
+      # volume faltar.
+      - ./app.py:/app/app.py:ro
+      - ./src:/app/src:ro
+      - ./.streamlit:/app/.streamlit:ro
+      # A extração do sinan, somente leitura. Em dev é a junção `data ->
+      # ../sinan/data`; na VM, o mesmo diretório do painel nacional.
+      - ${SINAN_DATA_DIR:-../dashboard-sinan-pe/data}:/app/data:ro
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1500M
+        reservations:
+          cpus: "0.5"
+          memory: 512M
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/cenarios/tbpe/_stcore/health')"]
+      test: [CMD, curl, -f, http://localhost:8501/cenarios/tbpe/_stcore/health]
       interval: 30s
       timeout: 10s
       retries: 3
