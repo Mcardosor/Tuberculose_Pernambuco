@@ -76,9 +76,13 @@
       };
       option.tooltip.formatter = (p) => {
         if (Array.isArray(p) && option.tooltip.trigger === "axis") {
+          const porSerie = option.tooltip.casasPorSerie || {};
           const linhas = p.filter((s) => !ocultas.includes(s.seriesName)).map((s) => {
             const valor = Array.isArray(s.value) ? s.value[1] : s.value;
-            return s.marker + " " + s.seriesName + ": <b>" + fmt(valor) + "</b>";
+            const c = porSerie[s.seriesName] !== undefined ? porSerie[s.seriesName] : casas;
+            const num = valor === null || valor === undefined ? "\u2014"
+              : Number(valor).toLocaleString("pt-BR", { minimumFractionDigits: c, maximumFractionDigits: c });
+            return s.marker + " " + s.seriesName + ": <b>" + num + "</b>";
           });
           let cabeca = "";
           if (p[0]) {
