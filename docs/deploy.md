@@ -7,17 +7,13 @@
 | Pasta na VM | `~/tbpe` |
 | Dados | volume de `~/dashboard-sinan-pe/data` — a mesma extração do painel nacional; nada é copiado |
 
-Este painel **substitui** o `tbpe` da geração anterior (Superset +
-`dados_dashboard/`), que está no ar no mesmo caminho e na mesma porta. Na
-primeira subida, pare aquele antes — o `container_name` é o mesmo e a porta
-também:
+Substituiu o `tbpe` da geração anterior (Superset + `dados_dashboard/`) em
+21/set/2026, no mesmo caminho e porta. O container antigo
+(`dashboard-tb-pernambuco`, pasta `~/dashboard-tb-pernambuco`) ficou parado
+na VM, não apagado — para voltar a ele: parar este e `docker compose up -d`
+lá.
 
-```bash
-ssh cenarios-vm 'cd ~/tbpe && docker compose down && mv ~/tbpe ~/tbpe-superset'
-ssh cenarios-vm 'git clone <remoto> ~/tbpe && cd ~/tbpe && SINAN_DATA_DIR=~/dashboard-sinan-pe/data docker compose up -d --build'
-```
-
-Nas seguintes:
+Deploy:
 
 ```bash
 ssh cenarios-vm 'cd ~/tbpe && git pull && docker compose up -d --build'

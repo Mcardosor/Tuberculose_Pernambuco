@@ -30,7 +30,7 @@ dados são a extração do sinan: em dev, `data/` é uma **junção** para
 
 ```bash
 streamlit run app.py                       # aplicação (porta 8501)
-pytest                                     # suíte (~365 testes, ~70 s)
+pytest                                     # suíte (~390 testes, ~60 s; ~80 sem dados)
 pytest tests/test_aplicacao.py -q          # ponta a ponta com AppTest
 ruff check --select F app.py src tests     # código morto
 
@@ -101,7 +101,12 @@ PE) → `src/data/*` → `src/mapa.py` e `src/graficos.py`.
 
 ## Estado
 
-Montado em 20/set/2026 a partir do hansepe, com agregados. Sem microdado, o
-que fica de fora: coorte fechada de desfecho, contatos examinados e cultura
-em retratamento por município (`INDICADORES_PROGRAMA` vazio). Deploy:
-`docs/deploy.md`.
+Montado em 20/set/2026 a partir do hansepe; no ar desde 21/set em
+`/cenarios/tbpe/`, com mapa e gráficos como componentes próprios. Sem
+microdado, o que fica de fora: coorte fechada de desfecho, contatos
+examinados e cultura em retratamento por município (`INDICADORES_PROGRAMA`
+vazio). CI no GitHub roda o subconjunto sem dados. Deploy: `docs/deploy.md`.
+
+Limpeza pendente: `src/graficos.py` (versões Altair) e
+`componentes.script_travar_zoom` ficaram sem consumidor na tela; os testes
+ainda os cobrem. Tirar quando o hansepe e o RecifeTB fecharem o mesmo port.

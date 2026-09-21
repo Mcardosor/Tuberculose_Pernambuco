@@ -1,0 +1,56 @@
+name: CI
+
+# A extração do SINAN não está no repositório (são ~900 MB, e não é nossa
+# para publicar), então o CI roda o que não depende dela: tema, navegação,
+# resiliência, os dois componentes (mapa e gráficos) e a montagem das opções
+# ECharts com dados sintéticos. O resto pula com mensagem explícita — ver o
+# porteiro em tests/conftest.py.
+#
+# O que isto protege: import quebrado, erro de sintaxe, lock que não instala
+# mais, componente sem os arquivos vendorados, Dockerfile que não constrói.
+# O que NÃO protege: os invariantes epidemiológicos, que precisam da base.
+# Esses continuam sendo responsabilidade do `pytest` local antes do deploy.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 3.13 porque é a da imagem de produção (python:3.13-slim).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.lock.txt
+
+      - name: Instala as versões que estão no ar
+        run: pip install -r requirements.lock.txt ruff
+
+      # Só as regras que pegam bug (F): nome indefinido, import quebrado,
+      # variável nunca usada. Formatação não é assunto do CI.
+      - name: Ruff
+        run: ruff check --select F app.py src tests
+
+      - name: Testes
+        run: python -m pytest -q -rs
+
+  imagem:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Construir a imagem é o que prova que o lock ainda instala num
+      # ambiente limpo. Sem este job, um lock quebrado só apareceria no deploy.
+      - name: Constrói a imagem
+        run: docker build -t tbpe:ci .
+
+      - name: A imagem carrega os componentes vendorados
+        run: |
+          docker run --rm tbpe:ci ls src/componente_mapa/deck.min.js src/componente_grafico/echarts.min.js

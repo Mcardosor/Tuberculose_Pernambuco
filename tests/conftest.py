@@ -25,6 +25,7 @@ from src.data import config as config_dados
 PRECISAM_DE_DADOS = (
     "test_aplicacao.py",
     "test_cache.py",
+    "test_canal.py",
     "test_composicao.py",
     "test_desfechos.py",
     "test_estados_vazios.py",
