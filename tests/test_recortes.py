@@ -222,3 +222,21 @@ def test_navegacao_consulta_o_registro() -> None:
     assert not nav.tem_recortes_de_saude
     with pytest.raises(ValueError, match="recorte de saúde"):
         nav.definir_recorte("MACRO")
+
+
+def test_cura_por_macro_e_regiao_sai_da_soma_dos_encerramentos() -> None:
+    """O mapa de cura ficava em branco em macro e região de saúde: o
+    agregador não tinha os encerramentos. A proporção da macro tem de bater
+    com a do card (mesma soma municipal, mesma definição)."""
+    from src.data import kpis, recortes
+
+    por_macro = leitura.valores_por_regiao(ESCOPO, "cura_pct", "macro")
+    assert not por_macro.empty and por_macro.notna().all()
+    assert 0 < por_macro.min() and por_macro.max() < 100
+
+    muns = recortes.municipios_de(macro="Agreste", uf="PE")
+    card = kpis.calcular(Escopo(ESCOPO.doenca, ESCOPO.ano, "UF", uf="PE", municipios=tuple(muns)))
+    assert por_macro["Agreste"] == pytest.approx(card.cura_pct, abs=1e-6)
+
+    por_micro = leitura.valores_por_regiao(ESCOPO, "cura_pct", "micro", macro="Metropolitana")
+    assert set(por_micro.index) == {"Recife", "Limoeiro", "Palmares", "Goiana"}

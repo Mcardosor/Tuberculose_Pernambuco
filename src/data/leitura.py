@@ -627,6 +627,20 @@ def componentes_municipais(esc: Escopo) -> pd.DataFrame:
         [esc.uf],
     ).fetchdf()
     juncao = juncao.merge(faixa, on="cod_mun6", how="left")
+
+    # Encerramentos por município (`SITUA_ENCE`), para a proporção de cura
+    # por macro e região de saúde sair da **soma** dos encerramentos, com a
+    # mesma definição do card e do mapa municipal. Sem isto o mapa de cura
+    # ficava em branco nos dois níveis — `recortes.agregar` não tinha de
+    # onde tirar a razão.
+    desfechos = desfechos_por_geografia(esc)
+    if not desfechos.empty:
+        desfechos = desfechos[["cura", "total"]].rename(
+            columns={"cura": "cura_encerrada", "total": "encerramentos"}
+        )
+        juncao = juncao.merge(
+            desfechos, left_on="cod_mun6", right_index=True, how="left"
+        )
     return juncao.set_index("cod_mun6")
 
 

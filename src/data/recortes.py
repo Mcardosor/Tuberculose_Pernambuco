@@ -209,5 +209,12 @@ def agregar(
         return somas["obitos"] / somas["pop"].replace(0, pd.NA) * 100_000
     if metrica == "letalidade" and {"obitos", "casos"} <= set(somas.columns):
         return somas["obitos"] / somas["casos"].replace(0, pd.NA) * 100
+    if metrica == "cura_pct" and {"cura_encerrada", "encerramentos"} <= set(somas.columns):
+        # Mesma regra do mapa municipal: base abaixo do mínimo publicável
+        # vira "sem dado" em vez de 100% com três casos.
+        from .leitura import MINIMO_PARA_PERCENTUAL
+
+        base = somas["encerramentos"].where(somas["encerramentos"] >= MINIMO_PARA_PERCENTUAL)
+        return somas["cura_encerrada"] / base * 100
 
     return pd.Series(dtype=float)
