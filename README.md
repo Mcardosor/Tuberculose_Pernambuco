@@ -89,7 +89,6 @@ tbpe/
 │   ├── componente_mapa/          # deck.gl vendorado + protocolo do Streamlit
 │   ├── grafico_componente.py     # os gráficos como opções ECharts
 │   ├── componente_grafico/       # ECharts vendorado + protocolo do Streamlit
-│   ├── graficos.py               # tema e versões Altair (sem consumidor na tela)
 │   ├── data/                     # escopo, leitura, kpis, canal, recortes, geo
 │   ├── doencas/tuberculose.py    # o pack: KPIs, cortes, variáveis, rótulos
 │   └── theme/                    # a cara do painel em R

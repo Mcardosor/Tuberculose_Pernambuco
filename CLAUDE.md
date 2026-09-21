@@ -83,8 +83,9 @@ PE) → `src/data/*` → `src/mapa.py` e `src/graficos.py`.
   bloqueado na rede). Detalhes e medição: `docs/mapa-clique.md`.
 - **Todos os gráficos são ECharts** (`src/grafico_componente.py` +
   `src/componente_grafico/`, ECharts 5.6 vendorado), pelo mesmo motivo: o
-  Altair não anima entre dois estados. O `graficos.py` Altair ficou sem
-  consumidor na tela (só tema e `alvo_do_clique` das barras nos testes). Regras: todo item
+  Altair não anima entre dois estados. O `graficos.py` Altair saiu em
+  21/set/2026; as constantes de layout foram para o fim de
+  `grafico_componente.py`. Regras: todo item
   leva `name` (é o que casa e anima), série com `id` fixo, clique com nonce.
 - **Animação não se mede no navegador embutido do app**: ele roda a 1
   frame/s quando a janela está oculta e o voo vira salto. Falso negativo.
@@ -106,7 +107,5 @@ Montado em 20/set/2026 a partir do hansepe; no ar desde 21/set em
 microdado, o que fica de fora: coorte fechada de desfecho, contatos
 examinados e cultura em retratamento por município (`INDICADORES_PROGRAMA`
 vazio). CI no GitHub roda o subconjunto sem dados. Deploy: `docs/deploy.md`.
-
-Limpeza pendente: `src/graficos.py` (versões Altair) e
-`componentes.script_travar_zoom` ficaram sem consumidor na tela; os testes
-ainda os cobrem. Tirar quando o hansepe e o RecifeTB fecharem o mesmo port.
+O `graficos.py` Altair e o `script_travar_zoom` saíram em 21/set/2026, depois
+que os três painéis fecharam o mesmo port.
