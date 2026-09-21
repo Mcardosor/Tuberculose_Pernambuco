@@ -71,7 +71,8 @@ para não repetir.
 | `src/data/geo.py` + `scripts/preparar_geometria.py` | **Inteiro** | Nada — a malha do IBGE é a mesma |
 | `src/data/recortes.py` | **Inteiro** | Uma entrada em `CONFIGURACOES` por UF nova, sem tocar em código |
 | `src/mapa.py` | **Inteiro** (1.032 linhas) | Nada. As métricas vêm do pack |
-| `src/graficos.py` | Quase todo | Só os gráficos que existem por causa da doença |
+| `src/grafico_componente.py` + `src/componente_grafico/` | Quase todo | Só os gráficos que existem por causa da doença (opções ECharts) |
+| `src/mapa_componente.py` + `src/componente_mapa/` | **Inteiro** | Nada. O spec do pydeck vai como está |
 | `src/theme/` | **Inteiro** | Nada. Cor é por *métrica*, não por doença |
 | `src/estado.py` | **Inteiro** | Nada |
 | `src/resiliencia.py` | **Inteiro** | Nada |
@@ -197,9 +198,15 @@ repetem aqui. O que se repete são as **classes**:
   infinitos** neste projeto. Regra prática: controle que só o usuário mexe
   leva `key`; controle que o código também move não leva, e recebe `default` a
   cada run.
-- **Seleção de gráfico persiste entre runs.** `st.altair_chart(on_select="rerun")`
-  devolve a mesma seleção em todo rerun seguinte. O handler de clique **tem
-  que ser idempotente**, ou re-executa a navegação para sempre.
+- **O valor de um componente persiste entre runs.** O clique no mapa ou
+  numa barra volta como o mesmo valor em todo rerun seguinte. Por isso ele
+  carrega um **nonce**, e o `app.py` guarda o último tratado em
+  `session_state`: só o evento novo navega (`mapa_componente.alvo_do_clique`).
+- **Widget abaixo do que ele controla lê o valor num `on_change`, não no
+  ponto em que é criado.** O seletor de métrica fica abaixo dos cards de
+  KPI; lido na criação, os cards já desenhados realçavam a métrica antiga e
+  só o rerun seguinte — um segundo clique em qualquer coisa — os punha em
+  dia. O callback roda antes do script (`_ao_mudar_metrica` no `app.py`).
 - **O healthcheck mente.** `/_stcore/health` responde assim que o servidor
   sobe e ignora se o script levantou exceção. O container fica `healthy` com a
   página exibindo `FileNotFoundError`. **Depois de todo deploy, abra a página
@@ -212,15 +219,17 @@ repetem aqui. O que se repete são as **classes**:
   caracteres do atlas de fonte precisa ser `tuple`, não `list`.
 - **Multi-view não passa pelo componente do Streamlit.** O inset de Fernando
   de Noronha teve que ser feito como camada, não como segunda vista.
-- **Não existe transição de câmera.** O Streamlit **recria o contêiner e o
-  canvas do deck a cada rerun**, mesmo com a `key` inalterada — medido no
-  navegador. `transitionDuration` e `FlyToInterpolator` são emitidos e não
-  fazem nada, porque não há instância anterior de onde partir. Não tente de
-  novo; o motivo está comentado em `src/theme/componentes.py`.
-- **Os controles do mapbox nascem *dentro* do wrapper do deck**, que escuta o
-  ponteiro na fase de captura. Clicar no botão de zoom com um polígono embaixo
-  dá zoom **e** navega. `stopPropagation` não resolve em nenhuma das duas
-  fases; a saída foi realocar o controle para fora do wrapper.
+- **`st.pydeck_chart` recria o canvas a cada rerun**, então não há
+  transição de câmera por ali. O que dá transição é o **componente próprio**
+  (`src/componente_mapa/`): a instância do deck fica viva no iframe e recebe
+  só o spec novo — voo com `FlyToInterpolator`, cor com `transitions` na
+  camada. O mesmo vale para os gráficos, em ECharts. Receita, medição e as
+  armadilhas do caminho (foco preso no iframe, realce de hover preso, cache
+  do `.js`) em `docs/mapa-clique.md`.
+- **O Streamlit serve `.js` de componente com `Cache-Control: public`** e só
+  o `index.html` com `no-cache`. Todo script leva `?v=<hash>` no `src`
+  (`scripts/versionar_js.py`; o teste cobra), senão quem já abriu o painel
+  segue com o JavaScript velho.
 
 ---
 

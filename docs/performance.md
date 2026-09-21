@@ -1,5 +1,12 @@
 # Performance — linha de base
 
+> Medições de ago/2026, com `st.pydeck_chart` e gráficos Altair. Desde
+> 21/set/2026 mapa e gráficos são componentes próprios (deck.gl e ECharts
+> vivos entre reruns): o spec do mapa continua o mesmo — as medidas de
+> tamanho e de tempo de servidor valem —, mas o redesenho no navegador
+> descrito aqui não acontece mais; o custo passou a ser o `setProps` /
+> `setOption` de cada iframe.
+
 Medido em 03/ago/2026, antes de qualquer otimização. Reproduzir com:
 
 ```bash

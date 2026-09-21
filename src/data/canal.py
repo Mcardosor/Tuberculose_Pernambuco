@@ -84,7 +84,7 @@ class Canal:
     """As três camadas do gráfico, já prontas para desenhar.
 
     Separadas, e não numa tabela longa só, porque cada uma vira uma camada
-    diferente do Altair — área, linhas finas, linha grossa — e reuni-las
+    diferente do gráfico — área, linhas finas, linha grossa — e reuni-las
     obrigaria a fatiar de novo na hora de desenhar.
     """
 

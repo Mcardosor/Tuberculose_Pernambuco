@@ -12,7 +12,7 @@ a cara segue o painel em R** (decisão de 20/set/2026).
 
 Herda o core do painel nacional (`../sinan`: leitores, `Escopo`,
 `recortes.py`), a geografia e a composição de tela do hansepe (`estado.py`,
-`mapa.py` com três classificações, `graficos.py`, `canal.py`, `theme/`) e o
+`mapa.py` com três classificações, `canal.py`, `theme/`) e o
 pack de doença do RecifeTB (`src/doencas/tuberculose.py`). Segue
 `../sinan/docs/como-fazer.md`.
 
@@ -42,7 +42,8 @@ Config de dev do navegador: `../.claude/launch.json` tem `tbpe` na 8516.
 ## Arquitetura
 
 **Fluxo:** `app.py` (página única) → `src/estado.py` (`Navegacao`, topo em
-PE) → `src/data/*` → `src/mapa.py` e `src/graficos.py`.
+PE) → `src/data/*` → `src/mapa.py` + `src/mapa_componente.py` (mapa) e
+`src/grafico_componente.py` (gráficos).
 
 - **`src/data/escopo.py`** — `Escopo(doenca, ano, nivel, uf, mun,
   municipios)`. `municipios` é a lista de uma macrorregião ou região de
