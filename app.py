@@ -12,11 +12,10 @@ o que está aqui é arranjo de tela e fiação de estado.
 
 from __future__ import annotations
 
-import altair as alt
 import pandas as pd
 import streamlit as st
 
-from src import doencas, graficos, mapa, mapa_componente, resiliencia
+from src import doencas, grafico_componente, graficos, mapa, mapa_componente, resiliencia
 from src.data import canal, geo, leitura, recortes
 from src.data import kpis as calc
 from src.data.escopo import Escopo
@@ -539,21 +538,31 @@ with direita:
                 cortes_fixos=pack.cortes_fixos(nav.metrica),
                 decimais=1 if nav.metrica in pack.TAXAS else 0,
             )
-            escolha = alt.selection_point(name="barra", fields=["chave"], on="click")
-            evento_rank = st.altair_chart(
-                graficos.ranking(
+            # ECharts vivo (`grafico_componente`): ao mudar recorte, ano ou
+            # métrica as barras deslizam para o valor e a posição novos, em
+            # vez de o gráfico ser redesenhado do zero como no Altair.
+            evento_rank = grafico_componente.desenhar(
+                grafico_componente.ranking(
                     tabela,
                     rotulo=pack.rotulo(nav.metrica),
                     cor=pack.cor(nav.metrica),
-                    selecao=escolha,
-                    altura_minima=ALTURA_LINHA_1 - 200,
                     escala=escala_mapa,
+                    selecionado=nav.destacado if nav.recorte == "MUN" else None,
+                    largura_rotulo=graficos.LARGURA_ROTULO_RANKING,
                 ),
-                width="stretch",
-                on_select="rerun",
-                key=f"rank-{nav.ano}-{nav.metrica}-{nav.recorte}-{nav.macro or ''}-{classificacao}-{top_n}",
+                altura=max(
+                    ALTURA_LINHA_1 - 200,
+                    graficos.ALTURA_MIN_RANKING,
+                    graficos.ALTURA_BARRA_RANKING * len(tabela) + graficos.ALTURA_EIXO_RANKING,
+                ),
+                key="ranking",
             )
-            if clicado := graficos.alvo_do_clique(evento_rank, "barra"):
+            clicado, nonce_rank = grafico_componente.alvo_do_clique(
+                evento_rank, st.session_state.get("clique_ranking")
+            )
+            if nonce_rank:
+                st.session_state["clique_ranking"] = nonce_rank
+            if clicado:
                 if nav.recorte == "MACRO" and clicado != nav.macro:
                     nav.entrar_macro(clicado)
                     st.rerun()

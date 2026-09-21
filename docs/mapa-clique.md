@@ -128,3 +128,14 @@ Para portar ao hansepe e ao RecifeTB: copiar `src/componente_mapa/` e
 `src/mapa_componente.py`, dar `id` e `transitions` à camada em `mapa.py`, e
 trocar o bloco do `st.pydeck_chart` no `app.py` pelo `desenhar` +
 `alvo_do_clique` com nonce.
+
+## Gráficos — a mesma receita, com ECharts
+
+Pedido de 21/set/2026: o "talento" do mapa nos gráficos. O Altair/Vega-Lite
+não anima entre dois estados, então cada gráfico migrado vira uma opção
+ECharts (`src/grafico_componente.py`) entregue a um componente que mantém a
+instância viva (`src/componente_grafico/`) e só chama `setOption` — o
+ECharts interpola o que mudou. Feito: **ranking** (barras deslizam para o
+valor e a posição novos; cor por classe do mapa; clique destaca/entra, com
+nonce). A fazer, na ordem de retorno: tópicos de interesse, canal endêmico e
+epicurva, pirâmide.
