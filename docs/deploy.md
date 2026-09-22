@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Público | `https://painel.cenarios.unb.br/cenarios/tbpe/` |
-| Direto, por VPN | `http://10.20.10.64:8504/cenarios/tbpe/` |
+| Direto, por VPN | porta 8504 na VM dos painéis (`ssh cenarios-vm`) |
 | Pasta na VM | `~/tbpe` |
 | Dados | volume de `~/dashboard-sinan-pe/data` — a mesma extração do painel nacional; nada é copiado |
 
