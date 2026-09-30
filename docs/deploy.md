@@ -5,7 +5,7 @@
 | Público | `https://painel.cenarios.unb.br/cenarios/tbpe/` |
 | Direto, por VPN | porta 8504 na VM dos painéis (`ssh cenarios-vm`) |
 | Pasta na VM | `~/tbpe` |
-| Dados | volume de `~/dashboard-sinan-pe/data` — a mesma extração do painel nacional; nada é copiado |
+| Dados | volume de `~/tbpe/data` — só tuberculose, 55 MB, gerado na VM por `python3 -m scripts.extrair_dados_tuberculose --origem ~/dashboard-sinan-pe/data` |
 
 Substituiu o `tbpe` da geração anterior (Superset + `dados_dashboard/`) em
 21/set/2026, no mesmo caminho e porta. O container antigo

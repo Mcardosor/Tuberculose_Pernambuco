@@ -1,8 +1,10 @@
 # Painel de tuberculose de Pernambuco — `tbpe`.
 #
-# Hospedagem nossa, na VM (`/cenarios/tbpe/`), como o sinan e o hansepe: os
-# dados são montados como volume de `../sinan/data` (a mesma extração que
-# serve o painel nacional), não copiados para a imagem.
+# Hospedagem nossa, na VM (`/cenarios/tbpe/`), como o sinan e o hansepe. Os
+# dados são **do painel**: `./data`, com as partições de tuberculose e mais
+# nada, montado somente leitura. Até 30/set/2026 era o lago inteiro do painel
+# nacional (241 MB, cinco doenças), e mexer nele derrubava os outros painéis.
+# Gerar com `python -m scripts.extrair_dados_tuberculose`.
 #
 # Substitui o container da geração anterior (Superset + `dados_dashboard/`),
 # que ocupava o mesmo caminho e a mesma porta: pare aquele antes de subir
@@ -28,9 +30,10 @@ services:
       - ./app.py:/app/app.py:ro
       - ./src:/app/src:ro
       - ./.streamlit:/app/.streamlit:ro
-      # A extração do sinan, somente leitura. Em dev é a junção `data ->
-      # ../sinan/data`; na VM, o mesmo diretório do painel nacional.
-      - ${SINAN_DATA_DIR:-../dashboard-sinan-pe/data}:/app/data:ro
+      # A extração de tuberculose deste painel, somente leitura. `DADOS`
+      # existe para quem quiser apontar para outro lugar; o padrão é a pasta
+      # do próprio repositório.
+      - ${DADOS:-./data}:/app/data:ro
     deploy:
       resources:
         limits:

@@ -283,6 +283,5 @@ Cinco coisas que este projeto pagou e o próximo não precisa pagar:
 | Docker, nginx, deploy key, o susto do healthcheck | `docs/deploy.md` |
 | O que o painel de origem tem, tela por tela | `docs/inventario-funcionalidades.md` |
 | Divergências com o painel em R, decididas | `tests/paridade/excecoes.md` |
-| Banco cru do SINAN, para conferência | `docs/banco-cenarios.md` |
 | Superset, se um dia voltar | `docs/analise-livre.md` |
 | Perguntas abertas com a equipe parceira | `docs/perguntas-equipe-r.md` |

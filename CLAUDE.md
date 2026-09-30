@@ -25,8 +25,12 @@ Documentação, código, commits e comentários em português.
 ## Comandos
 
 Ambiente: o `.venv` do painel nacional, `../sinan/.venv` (Python 3.13). Os
-dados são a extração do sinan: em dev, `data/` é uma **junção** para
-`../sinan/data` (`New-Item -ItemType Junction`); em produção, volume.
+dados são **do painel**: `data/` tem só as partições `doenca=TUBERCULOSE`
+mais os dois datasets de indicadores de TB, 55 MB, gerados do lago do painel
+nacional por `python -m scripts.extrair_dados_tuberculose`. Era uma junção
+para `../sinan/data` até 30/set/2026 — 241 MB com dengue, hanseníase e zika
+que este painel nunca lê, e mexer ali derrubava os outros painéis. É cópia:
+quando a extração do sinan mudar, rode o script de novo.
 
 ```bash
 streamlit run app.py                       # aplicação (porta 8501)

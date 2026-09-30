@@ -121,9 +121,11 @@ mesma que serve o painel nacional — em parquet com particionamento Hive:
 hierarquia de regiões de saúde da SES-PE em `data/support/`.
 
 - **Nenhum dado nominal entra no projeto.** Só agregados por município.
-- Os parquets **não são versionados**. Em desenvolvimento, `data/` é uma
-  junção para a pasta do painel nacional (`../sinan/data`); em produção, um
-  volume. `SINAN_DATA_DIR` aponta para outro lugar quando preciso.
+- Os parquets **não são versionados**. `data/` tem só a parte de
+  tuberculose — 55 MB —, copiada do acervo do painel nacional por
+  `python -m scripts.extrair_dados_tuberculose`. É cópia: quando a extração
+  for atualizada, rode o script de novo; `data/PROCEDENCIA.json` diz de onde
+  veio e quando.
 - Cobertura: 2010 a 2025 (2025 parcial). O painel abre no último ano
   fechado.
 
@@ -136,7 +138,7 @@ git clone https://github.com/Mcardosor/Tuberculose_Pernambuco.git tbpe
 cd tbpe
 python -m venv .venv && .venv/Scripts/activate        # Linux/macOS: source .venv/bin/activate
 pip install -r requirements.lock.txt
-export SINAN_DATA_DIR=/caminho/para/data              # ou a junção data -> ../sinan/data
+python -m scripts.extrair_dados_tuberculose           # monta ./data a partir de ../sinan/data
 streamlit run app.py
 ```
 

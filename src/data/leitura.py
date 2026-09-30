@@ -360,16 +360,6 @@ def indicador_tb_contatos(esc: Escopo) -> dict:
     )
 
 
-def indicador_tb_cultura(esc: Escopo) -> dict:
-    """Cultura realizada em casos de retratamento, com a proporção."""
-    return _indicador_tb(
-        "indicadores_tb_cultura_retratamento",
-        esc,
-        "sum(total_retratamento) AS retratamento, "
-        "sum(cultura_realizada_total) AS cultura",
-    )
-
-
 #: Colunas de `incidence` que servem uma métrica diretamente.
 _COLUNA_DIRETA = {
     "casos": "casos_total",
@@ -1025,32 +1015,3 @@ def meses_com_dado(doenca: str, ano: int) -> int:
     return int(linha[0]) if linha and linha[0] else 0
 
 
-def indicadores_programa(esc: Escopo, specs) -> list[dict]:
-    """Os indicadores de programa do recorte, prontos para exibição.
-
-    Cada item traz ``rotulo``, ``numerador``, ``denominador``, ``pct`` e
-    ``descricao``. Indicador sem dado no recorte sai com ``pct`` nulo, e não
-    some da lista — a ausência é informação.
-
-    **Atenção ao ano.** Estes arquivos vêm de uma extração diferente da de
-    `incidence`, com cobertura própria: em 2025 trazem 161.739 contatos
-    identificados enquanto `incidence` registra 1.773 casos, o que daria 91
-    contatos por caso. Em 2024, com os dois fechados, a razão é 2. Não dá para
-    ler os dois lado a lado num ano em que só um fechou; quem chama precisa
-    avisar. Ver docs/contrato-dados.md, armadilha 12.
-    """
-    saida: list[dict] = []
-    for spec in specs:
-        bruto = globals()[spec["leitor"]](esc) or {}
-        num = pd.to_numeric(bruto.get(spec["numerador"]), errors="coerce")
-        den = pd.to_numeric(bruto.get(spec["denominador"]), errors="coerce")
-        valido = pd.notna(num) and pd.notna(den) and den > 0
-        saida.append(
-            {
-                **{c: spec[c] for c in ("chave", "rotulo", "descricao", "cor")},
-                "numerador": float(num) if pd.notna(num) else None,
-                "denominador": float(den) if pd.notna(den) else None,
-                "pct": float(num) / float(den) * 100 if valido else None,
-            }
-        )
-    return saida
