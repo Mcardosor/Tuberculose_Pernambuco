@@ -184,8 +184,13 @@ def _canal(ano: int, nivel: str, mun: str | None, macro, micro):
 
 
 @st.cache_data(ttl=TTL_DADOS, show_spinner=False)
-def _epicurva(ano: int, nivel: str, mun: str | None, macro, micro) -> pd.DataFrame:
-    return canal.epicurva(_escopo(ano, nivel, mun, macro, micro))
+def _epicurva(
+    ano: int, nivel: str, mun: str | None, macro, micro, ano_min: int | None = None
+) -> pd.DataFrame:
+    # Aqui a janela entra no leitor, e não no `_recortar`: a epicurva monta a
+    # série ano a ano, uma consulta por ano, e cortar antes economiza as idas
+    # ao disco em vez de jogar fora o que já custou.
+    return canal.epicurva(_escopo(ano, nivel, mun, macro, micro), ano_min=ano_min)
 
 
 @st.cache_data(ttl=TTL_DADOS, show_spinner=False)
@@ -304,6 +309,40 @@ if (meses := _meses_com_dado(nav.ano)) < 12:
         f"Não compare o total com anos fechados.",
         icon=":material/schedule:",
     )
+
+
+#: Janelas de tempo oferecidas para as séries, em anos.
+#:
+#: Medido em 30/set/2026: a epicurva varrendo de 2010 até o ano selecionado
+#: custava 329 ms em PE e 585 ms numa macrorregião — 90% do tempo do painel,
+#: porque ela monta a série com uma consulta por ano e a série mensal daqui
+#: ainda busca a população da região no `incidence`. Dez anos é o recorte que
+#: o Boletim publica, e é o padrão aqui pelo mesmo motivo.
+JANELAS = (5, 10, 15)
+JANELA_PADRAO = 10
+
+
+def _janela() -> int:
+    """Quantos anos as séries mostram."""
+    return int(st.session_state.get("janela") or JANELA_PADRAO)
+
+
+def _ano_inicial_da_janela() -> int:
+    """Primeiro ano da janela, contando de trás para frente a partir do ano
+    selecionado."""
+    return nav.ano - _janela() + 1
+
+
+def _recortar(dados: pd.DataFrame) -> pd.DataFrame:
+    """Deixa na série só os anos da janela.
+
+    Filtrar aqui, e não no leitor, é de propósito: os leitores são cacheados
+    por recorte geográfico, e pôr a janela na chave multiplicaria o cache por
+    três para devolver sempre o mesmo subconjunto.
+    """
+    if dados.empty or "ano" not in dados:
+        return dados
+    return dados[(dados["ano"] <= nav.ano) & (dados["ano"] >= _ano_inicial_da_janela())]
 
 
 def _card(metrica: str, atual, anterior) -> None:
@@ -526,7 +565,9 @@ with direita:
                     if acima:
                         rodape += f" Em {nav.ano}, **{acima} de 12 meses** ficaram acima do topo da faixa."
             else:
-                serie = _serie_anual(nav.nivel, nav.mun, nav.macro, nav.micro, "incid")
+                serie = _recortar(
+                    _serie_anual(nav.nivel, nav.mun, nav.macro, nav.micro, "incid")
+                )
                 figura = grafico_componente.evolucao_anual(
                     serie, rotulo=pack.rotulo("incid"), cor=pack.cor("incid"), ano=nav.ano,
                 )
@@ -541,10 +582,34 @@ with direita:
                 key="canal" if horizonte == "Meses do ano" else "anual",
             )
 
-            st.markdown(ui.titulo_painel("Epicurva por mês"), unsafe_allow_html=True)
+            # Os botões de janela sobre o gráfico e à direita, como num
+            # gráfico de cotação. Valem para as duas séries de tempo da
+            # página — esta e a anual —, e não só para a epicurva.
+            titulo_epi, botoes_epi = st.columns([4, 6], vertical_alignment="center")
+            with titulo_epi:
+                st.markdown(
+                    ui.titulo_painel(
+                        "Epicurva por mês",
+                        ajuda="Casos por mês de diagnóstico, em série contínua. "
+                              "A janela vale também para a série anual.",
+                    ),
+                    unsafe_allow_html=True,
+                )
+            with botoes_epi:
+                st.segmented_control(
+                    "Janela",
+                    JANELAS,
+                    format_func=lambda j: f"{j}a",
+                    default=st.session_state.get("janela", JANELA_PADRAO),
+                    key="janela",
+                    label_visibility="collapsed",
+                )
             grafico_componente.desenhar(
                 grafico_componente.epicurva(
-                    _epicurva(nav.ano, nav.nivel, nav.mun, nav.macro, nav.micro),
+                    _epicurva(
+                        nav.ano, nav.nivel, nav.mun, nav.macro, nav.micro,
+                        _ano_inicial_da_janela(),
+                    ),
                     rotulo="Casos", cor=pack.cor("casos"), ano_em_foco=nav.ano,
                 ),
                 altura=220, key="epicurva",

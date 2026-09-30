@@ -1,7 +1,7 @@
 # Performance
 
-Medido em 30/set/2026, com tuberculose, no `data/` deste painel. Reproduzir
-com:
+Medido em 30/set/2026, com tuberculose, no `data/` deste painel, já com a
+janela de dez anos que entrou no mesmo dia. Reproduzir com:
 
 ```bash
 python -m scripts.medir_performance
@@ -27,38 +27,48 @@ Mediana de cinco execuções, em milissegundos, sem o cache do Streamlit, em
 
 | Operação | PE | macrorregião | Recife |
 |---|---:|---:|---:|
-| `canal.epicurva` (2010–2024) | 329 | 585 | 328 |
-| `canal.montar` | 153 | 254 | 154 |
-| `composicao` (um tópico) | 16 | 21 | 18 |
-| `piramide_completa` | 15 | 19 | 16 |
-| `ranking` | 9 | 8 | 9 |
-| `serie_anual` | 8 | 16 | 9 |
+| `canal.epicurva` (10 anos) | 216 | 377 | 218 |
+| `canal.montar` | 141 | 235 | 144 |
+| `composicao` (um tópico) | 14 | 21 | 17 |
+| `piramide_completa` | 14 | 18 | 16 |
+| `ranking` | 8 | 7 | 7 |
+| `serie_anual` | 7 | 16 | 10 |
 | `valores_por_geografia` (o mapa) | 3 | 3 | 3 |
-| **soma dos leitores** | **533** | **906** | **535** |
-| `kpis.calcular` (os 6 cards) | 26 | 46 | 34 |
+| **soma dos leitores** | **404** | **677** | **414** |
+| `kpis.calcular` (os 6 cards) | 23 | 38 | 30 |
 
 Somar a coluna superestima o que o usuário espera — os leitores são cacheados
 separadamente e um clique não invalida todos —, mas serve de teto. E o teto
-**passa muito dos 300 ms**, em qualquer recorte.
+**ainda passa dos 300 ms**, em qualquer recorte.
 
 ## O problema está concentrado em dois gráficos
 
-`canal.epicurva` e `canal.montar` somam **482 ms em PE e 839 ms numa
-macrorregião**: 90% do custo do painel. Todo o resto junto não chega a 60 ms.
+`canal.epicurva` e `canal.montar` somam **357 ms em PE e 612 ms numa
+macrorregião**: 88% do custo do painel. Todo o resto junto não chega a 50 ms.
 
-Duas razões se somam:
+**A janela de anos, aplicada em 30/set, já cortou um terço disso.** Antes a
+epicurva varria de 2010 até o ano selecionado; agora o padrão é dez anos, que
+é o recorte do Boletim. Medido:
 
-**A epicurva monta quinze anos, um ano por consulta.** Ela varre de 2010 até o
-ano selecionado, e cada ano é uma ida ao `_cache_ts`. O painel de hanseníase
-resolveu isso com um seletor de janela — 5, 10 ou 15 anos, abrindo em 10 — e
-lá a mesma operação custa 93 ms. **É a mudança de maior efeito disponível
-aqui**, e não é otimização: dez anos é o recorte que o Boletim publica.
+| janela | PE | macrorregião |
+|---|---:|---:|
+| 15 anos | 344 ms | 586 ms |
+| **10 anos (padrão)** | **228 ms** | **385 ms** |
+| 5 anos | 112 ms | 190 ms |
 
-**A série mensal daqui é mais cara que a da hanseníase.** `serie_mensal` tira
+O custo é linear no número de anos, e a razão é que a epicurva monta a série
+com **uma consulta por ano**.
+
+**O que ainda a deixa cara.** Mesmo em dez anos, ela custa 216 ms aqui contra
+93 ms no painel de hanseníase. A diferença é o `serie_mensal` daqui: ele tira
 a população da região do `incidence`, e não do `_cache_ts`, porque este só tem
 linha para município com caso no mês — sem isso, a incidência de uma região
-sairia errada. É uma consulta a mais por ano, e ela se multiplica pelos quinze
-anos da epicurva.
+sairia errada. É uma consulta a mais por ano, e ela se multiplica pelos dez.
+
+O conserto seria buscar a população de todos os anos numa consulta só, em vez
+de uma por ano. Vale 100 ms em PE e quase 200 na macrorregião, e não muda
+número nenhum na tela — é a próxima coisa a fazer aqui, se performance voltar
+à mesa.
 
 A macrorregião é o pior recorte porque lê a partição `MUN` com uma lista de
 municípios no `IN (...)`, pagando por vários onde o estado paga por um

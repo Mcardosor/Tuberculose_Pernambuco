@@ -47,7 +47,8 @@ OPERACOES: dict[str, Callable[[Escopo], object]] = {
     "valores_por_geografia (mapa)": lambda e: leitura.valores_por_geografia(e, "incid"),
     "ranking": lambda e: leitura.ranking(e, "incid"),
     "canal.montar": canal.montar,
-    "canal.epicurva": canal.epicurva,
+    # Como o painel chama desde 30/set: dez anos, não a série inteira.
+    "canal.epicurva (10 anos)": lambda e: canal.epicurva(e, ano_min=ANO - 9),
     "serie_anual": lambda e: leitura.serie_anual(e, "incid"),
     "piramide_completa": leitura.piramide_completa,
     "composicao (um tópico)": lambda e: leitura.composicao(e, "SITUA_ENCE"),
